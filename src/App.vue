@@ -6,11 +6,17 @@ import CategorySection from './components/CategorySection.vue'
 import StreamsGrid from './components/StreamsGrid.vue'
 import RightSidebar from './components/RightSidebar.vue'
 import StreamingVideoSection from './components/StreamingVideoSection.vue'
+import LoginPage from './components/LoginPage.vue'
+import MyPage from './components/MyPage.vue'
 
 const selectedCategory = ref('전체')
 const selectedNav = ref('홈')
 const searchValue = ref('')
 const selectedStream = ref(null)
+const isLoginModalOpen = ref(false)
+const isLoggedIn = ref(false)
+const currentUser = ref(null)
+const showMyPage = ref(false)
 const defaultCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
 const categories = ref(['전체', ...defaultCategories])
 const serverUrl = import.meta.env.VITE_APP_SERVER_URL
@@ -158,6 +164,40 @@ const closeVideoModal = () => {
   selectedStream.value = null
 }
 
+const openLoginModal = () => {
+  isLoginModalOpen.value = true
+}
+
+const closeLoginModal = () => {
+  isLoginModalOpen.value = false
+}
+
+const handleLoginSuccess = (userData) => {
+  console.log('로그인 성공:', userData)
+  isLoggedIn.value = true
+  currentUser.value = userData
+  // TODO: 추가 사용자 상태 업데이트
+}
+
+const handleLogout = () => {
+  console.log('로그아웃')
+  isLoggedIn.value = false
+  currentUser.value = null
+  showMyPage.value = false
+  localStorage.removeItem('userId')
+  localStorage.removeItem('token')
+  localStorage.removeItem('username')
+}
+
+const openMyPage = () => {
+  console.log('마이페이지 열기')
+  showMyPage.value = true
+}
+
+const closeMyPage = () => {
+  showMyPage.value = false
+}
+
 // 서버 카테고리 로드
 const loadCategories = async () => {
   if (!serverUrl) {
@@ -185,6 +225,21 @@ const loadCategories = async () => {
 
 onMounted(() => {
   loadCategories()
+
+  // localStorage에서 로그인 상태 복원
+  const userId = localStorage.getItem('userId')
+  const username = localStorage.getItem('username')
+  const token = localStorage.getItem('token')
+
+  if (userId || token) {
+    console.log('로그인 상태 복원:', { userId, username })
+    isLoggedIn.value = true
+    currentUser.value = {
+      userId,
+      username,
+      token
+    }
+  }
 })
 </script>
 
@@ -192,8 +247,12 @@ onMounted(() => {
   <div class="app-container">
     <Header
       :searchValue="searchValue"
+      :isLoggedIn="isLoggedIn"
+      :currentUser="currentUser"
       @search-input="(val) => searchValue = val"
-      @login="() => {}"
+      @login="openLoginModal"
+      @logout="handleLogout"
+      @mypage="openMyPage"
       @signup="() => {}"
     />
 
@@ -205,8 +264,16 @@ onMounted(() => {
       />
 
       <main class="main-content">
+        <!-- 마이페이지 -->
+        <template v-if="showMyPage">
+          <MyPage
+            :userId="currentUser?.userId"
+            @close="closeMyPage"
+          />
+        </template>
+
         <!-- 메인 콘텐츠 영역 -->
-        <template v-if="!selectedStream">
+        <template v-else-if="!selectedStream">
           <CategorySection
             :categories="categories"
             :selectedCategory="selectedCategory"
@@ -231,6 +298,13 @@ onMounted(() => {
 
       <RightSidebar :trendingItems="trendingItems" />
     </div>
+
+    <!-- Login Modal -->
+    <LoginPage
+      :isOpen="isLoginModalOpen"
+      @close="closeLoginModal"
+      @login-success="handleLoginSuccess"
+    />
   </div>
 </template>
 
