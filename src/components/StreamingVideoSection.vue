@@ -1,5 +1,7 @@
 <script setup>
 import { defineProps, defineEmits, ref, onMounted, onUnmounted, nextTick } from 'vue'
+import SockJS from 'sockjs-client/dist/sockjs'
+import { Client } from '@stomp/stompjs'
 
 const props = defineProps({
   id: Number,
@@ -16,52 +18,59 @@ const messages = ref([])
 const chatInput = ref('')
 const chatMessagesContainer = ref(null)
 const isFollowing = ref(false)
-let ws = null
+
+const isChatConnected = ref(false)
+const chatUsername = ref(localStorage.getItem('username') || localStorage.getItem('userId') || 'guest')
+const fixedRoomId = '807cf855-49f2-48ba-9475-0d2b9d51d3e4'
+
+const reconnectBaseDelayMs = 1000
+const reconnectMaxDelayMs = 10000
+const reconnectJitterMaxMs = 300
+const reconnectMaxDurationMs = 60000
+
+let stompClient = null
+let reconnectTimer = null
+let reconnectScheduled = false
+let reconnectAttempt = 0
+let reconnectStartedAtMs = null
+let userInitiatedDisconnect = false
+
+const primaryServerUrl = (import.meta.env.VITE_APP_SERVER_URL || 'http://localhost:8080').replace(/\/$/, '')
+const wsEndpoint = `${primaryServerUrl}/ws/chat`
 
 const followingThisUser = async () => {
   const serverUrl = import.meta.env.VITE_APP_SERVER_URL || 'http://localhost:8080'
   const myUserId = localStorage.getItem('userId')
   const streamerId = props.streamer_id
 
-  console.log('팔로우 요청:', { myUserId, streamerId, isFollowing: isFollowing.value })
-
   if (!serverUrl) {
-    console.warn('VITE_APP_SERVER_URL 환경 변수가 설정되지 않았습니다.')
     return
   }
 
   try {
     if (isFollowing.value) {
-      // 언팔로우
       const response = await fetch(`${serverUrl}/users/${myUserId}/unfollow`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ "user_id": myUserId, "streamerId": streamerId })
+        body: JSON.stringify({ user_id: myUserId, streamerId })
       })
 
       if (response.ok) {
-        console.log('언팔로우 성공!')
         isFollowing.value = false
-      } else {
-        console.error('언팔로우 실패:', response.status)
       }
     } else {
-      // 팔로우
       const response = await fetch(`${serverUrl}/users/${myUserId}/follow`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ "user_id": myUserId, "streamerId": streamerId })
+        body: JSON.stringify({ user_id: myUserId, streamerId })
       })
 
       if (response.ok) {
-        console.log('팔로우 성공!')
         isFollowing.value = true
-      } else {
-        console.error('팔로우 실패:', response.status)
       }
     }
   } catch (error) {
@@ -103,15 +112,6 @@ const postWatchHistory = () => {
     })
 }
 
-
-const handleClose = () => {
-  // 웹소켓 연결 닫기
-  if (ws) {
-    ws.close()
-  }
-  emit('close')
-}
-
 const scrollToBottom = () => {
   nextTick(() => {
     if (chatMessagesContainer.value) {
@@ -120,89 +120,222 @@ const scrollToBottom = () => {
   })
 }
 
-const getMessages = () => {
-  const serverUrl = import.meta.env.VITE_APP_SERVER_URL || 'ws://localhost:8080'
-  const wsUrl = serverUrl.replace('http://', 'ws://').replace('https://', 'wss://')
-
-  try {
-    ws = new WebSocket(`${wsUrl}/chat`)
-
-    ws.onopen = () => {
-      console.log('WebSocket 연결 성공')
-      // 연결 성공 시 초기 메시지 전송 (선택사항)
-      const joinMessage = {
-        type: 'join',
-        streamer: props.streamer,
-        timestamp: new Date().toISOString()
-      }
-      ws.send(JSON.stringify(joinMessage))
-    }
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-
-        // 메시지 타입에 따라 처리
-        if (data.type === 'chat') {
-          messages.value.push({
-            id: Date.now() + Math.random(),
-            user: data.user || 'Anonymous',
-            text: data.message || data.text,
-            timestamp: data.timestamp || new Date().toISOString()
-          })
-          scrollToBottom()
-        } else if (data.type === 'history') {
-          // 기존 채팅 히스토리 로드
-          messages.value = data.messages || []
-          scrollToBottom()
-        }
-      } catch (error) {
-        console.error('메시지 파싱 오류:', error)
-      }
-    }
-
-    ws.onerror = (error) => {
-      console.error('WebSocket 에러:', error)
-    }
-
-    ws.onclose = () => {
-      console.log('WebSocket 연결 종료')
-    }
-  } catch (error) {
-    console.error('WebSocket 연결 실패:', error)
-    // 실패 시 더미 데이터 사용 (개발용)
-    loadDummyMessages()
+const resetReconnectState = () => {
+  reconnectScheduled = false
+  reconnectAttempt = 0
+  reconnectStartedAtMs = null
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
   }
 }
 
-const sendMessage = () => {
-  if (!chatInput.value.trim()) return
-
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    const message = {
-      type: 'chat',
-      user: 'You',
-      message: chatInput.value,
-      streamer: props.streamer,
-      timestamp: new Date().toISOString()
-    }
-
-    ws.send(JSON.stringify(message))
-
-    // 내 메시지를 즉시 화면에 표시
-    messages.value.push({
-      id: Date.now(),
-      user: 'You',
-      text: chatInput.value,
-      timestamp: new Date().toISOString(),
-      isMine: true
-    })
-
-    chatInput.value = ''
-    scrollToBottom()
-  } else {
-    console.warn('WebSocket이 연결되지 않았습니다.')
+const fetchFromApi = async (path, options = {}) => {
+  const response = await fetch(`${primaryServerUrl}${path}`, options)
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
   }
+  return response
+}
+
+const appendChatMessage = (payload) => {
+  if (!payload) {
+    return
+  }
+
+  const isSystem = payload.type === 'ENTER' || payload.type === 'QUIT'
+  const sender = payload.sender || 'SYSTEM'
+
+  messages.value.push({
+    id: Date.now() + Math.random(),
+    user: sender,
+    text: payload.message || '',
+    isMine: !isSystem && sender === chatUsername.value,
+    isSystem
+  })
+
+  scrollToBottom()
+}
+
+const returnToDisconnectedState = (reason) => {
+  console.warn('채팅 재연결 중단:', reason)
+  userInitiatedDisconnect = true
+  isChatConnected.value = false
+  resetReconnectState()
+
+  if (stompClient) {
+    try {
+      stompClient.deactivate()
+    } catch (error) {
+      console.warn('채팅 연결 정리 중 오류:', error)
+    }
+  }
+
+  stompClient = null
+}
+
+const scheduleReconnect = (reason, delayMs) => {
+  if (userInitiatedDisconnect || reconnectScheduled) {
+    return
+  }
+
+  const now = Date.now()
+  if (!reconnectStartedAtMs) {
+    reconnectStartedAtMs = now
+  }
+
+  const elapsed = now - reconnectStartedAtMs
+  if (elapsed >= reconnectMaxDurationMs) {
+    returnToDisconnectedState('reconnect timeout')
+    return
+  }
+
+  const backoffDelay = Math.min(reconnectBaseDelayMs * (2 ** reconnectAttempt), reconnectMaxDelayMs)
+  let retryDelay = typeof delayMs === 'number' ? delayMs : backoffDelay
+  retryDelay += Math.floor(Math.random() * reconnectJitterMaxMs)
+
+  if (elapsed + retryDelay > reconnectMaxDurationMs) {
+    retryDelay = reconnectMaxDurationMs - elapsed
+  }
+
+  reconnectScheduled = true
+
+  reconnectTimer = setTimeout(() => {
+    reconnectScheduled = false
+    reconnectAttempt += 1
+    connectChat(true)
+  }, Math.max(retryDelay, 0))
+
+  console.warn('채팅 재연결 예약:', reason, retryDelay)
+}
+
+const connectChat = async (isReconnect = false) => {
+  if (!chatUsername.value.trim()) {
+    console.error('사용자 이름이 없습니다. localStorage username/userId를 확인하세요.')
+    return
+  }
+
+  try {
+    await fetchFromApi(`/chat/room/${encodeURIComponent(fixedRoomId)}`)
+  } catch (error) {
+    console.error('고정 채팅방 확인 실패:', error)
+    return
+  }
+
+  userInitiatedDisconnect = false
+
+  const client = new Client({
+    webSocketFactory: () => new SockJS(wsEndpoint),
+    reconnectDelay: 0,
+    debug: () => {},
+    onConnect: () => {
+      stompClient = client
+      isChatConnected.value = true
+      resetReconnectState()
+
+      client.subscribe(`/sub/chat/room/${fixedRoomId}`, (frame) => {
+        try {
+          appendChatMessage(JSON.parse(frame.body))
+        } catch (error) {
+          console.error('메시지 파싱 오류:', error)
+        }
+      })
+
+      client.publish({
+        destination: '/pub/chat/message',
+        body: JSON.stringify({
+          type: 'ENTER',
+          roomId: fixedRoomId,
+          sender: chatUsername.value,
+          message: ''
+        })
+      })
+
+      if (!isReconnect) {
+        messages.value = []
+      }
+    },
+    onStompError: (frame) => {
+      console.error('STOMP error:', frame)
+      isChatConnected.value = false
+      scheduleReconnect('stomp error')
+    },
+    onWebSocketError: (event) => {
+      console.error('WebSocket error:', event)
+      isChatConnected.value = false
+      scheduleReconnect('socket error')
+    },
+    onWebSocketClose: (event) => {
+      isChatConnected.value = false
+
+      if (userInitiatedDisconnect) {
+        return
+      }
+
+      if (event && (event.code === 4002 || String(event.reason || '').includes('Invalid payload'))) {
+        returnToDisconnectedState('invalid payload')
+        return
+      }
+
+      scheduleReconnect('socket closed')
+    }
+  })
+
+  stompClient = client
+  client.activate()
+}
+
+const disconnectChat = () => {
+  userInitiatedDisconnect = true
+  resetReconnectState()
+
+  if (stompClient && stompClient.connected) {
+    try {
+      stompClient.publish({
+        destination: '/pub/chat/message',
+        body: JSON.stringify({
+          type: 'QUIT',
+          roomId: fixedRoomId,
+          sender: chatUsername.value,
+          message: ''
+        })
+      })
+    } catch (error) {
+      console.warn('QUIT 전송 실패:', error)
+    }
+  }
+
+  if (stompClient) {
+    stompClient.deactivate()
+    stompClient = null
+  }
+
+  isChatConnected.value = false
+}
+
+const sendMessage = () => {
+  const messageContent = chatInput.value.trim()
+
+  if (!messageContent) {
+    return
+  }
+
+  if (!stompClient || !stompClient.connected) {
+    alert('채팅 서버에 연결되어 있지 않습니다.')
+    return
+  }
+
+  stompClient.publish({
+    destination: '/pub/chat/message',
+    body: JSON.stringify({
+      type: 'TALK',
+      roomId: fixedRoomId,
+      sender: chatUsername.value,
+      message: messageContent
+    })
+  })
+
+  chatInput.value = ''
 }
 
 const handleKeyPress = (event) => {
@@ -211,18 +344,14 @@ const handleKeyPress = (event) => {
   }
 }
 
-// 개발용 더미 메시지 로드
-const loadDummyMessages = () => {
-  messages.value = [
-    { id: 1, user: 'User1', text: '오 신작이네!', timestamp: new Date().toISOString() },
-    { id: 2, user: 'User2', text: '대기 중입니다', timestamp: new Date().toISOString() },
-    { id: 3, user: 'User3', text: '재밌다!', timestamp: new Date().toISOString() }
-  ]
+const handleClose = () => {
+  disconnectChat()
+  emit('close')
 }
 
 const formatViewers = (count) => {
   if (count >= 1000) {
-    return (count / 1000).toFixed(1) + 'K'
+    return `${(count / 1000).toFixed(1)}K`
   }
   return count.toString()
 }
@@ -230,18 +359,16 @@ const formatViewers = (count) => {
 onMounted(() => {
   getMessages()
   postWatchHistory()
+  connectChat(false)
 })
 
 onUnmounted(() => {
-  if (ws) {
-    ws.close()
-  }
+  disconnectChat()
 })
 </script>
 
 <template>
   <div class="video-page">
-    <!-- 상단 네비게이션 -->
     <div class="video-top-bar">
       <button class="back-btn" @click="handleClose">
         <span class="back-icon">←</span>
@@ -249,9 +376,7 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- 메인 콘텐츠 -->
     <div class="video-main">
-      <!-- 좌측: 비디오 플레이어 -->
       <div class="video-player-section">
         <div class="video-player-wrapper">
           <iframe
@@ -265,7 +390,6 @@ onUnmounted(() => {
           ></iframe>
         </div>
 
-        <!-- 비디오 정보 -->
         <div class="video-info">
           <h1 class="video-title">{{ title }}</h1>
           <div class="video-meta">
@@ -277,7 +401,7 @@ onUnmounted(() => {
                   <p class="streamer-followers">1.2M 팔로워</p>
                 </div>
                 <button
-                  :class="['follow-btn', { 'following': isFollowing }]"
+                  :class="['follow-btn', { following: isFollowing }]"
                   @click="followingThisUser"
                 >
                   {{ isFollowing ? '팔로우 끊기' : '팔로우' }}
@@ -302,7 +426,6 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 설명 -->
           <div class="video-description">
             <p>🎮 실시간 게임 스트리밍 중입니다!</p>
             <p>다양한 게임을 즐기면서 여러분과 소통하겠습니다.</p>
@@ -310,28 +433,31 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 우측: 채팅 및 관련 스트림 -->
       <aside class="video-sidebar">
-        <!-- 채팅 섹션 -->
         <div class="chat-section">
           <div class="chat-header">
             <h3>💬 실시간 채팅</h3>
             <span class="chat-count">{{ messages.length }}개의 메시지</span>
           </div>
+
           <div class="chat-messages" ref="chatMessagesContainer">
             <div
               v-for="message in messages"
               :key="message.id"
-              :class="['chat-message', { 'my-message': message.isMine }]"
+              :class="[
+                'chat-message',
+                { 'my-message': message.isMine, 'system-message': message.isSystem }
+              ]"
             >
-              <span class="chat-user">{{ message.user }}</span>
+              <span class="chat-user">{{ message.isSystem ? '시스템' : message.user }}</span>
               <span class="chat-text">{{ message.text }}</span>
             </div>
             <div v-if="messages.length === 0" class="no-messages">
               <p>아직 채팅이 없습니다.</p>
-              <p>첫 메시지를 남겨보세요! 👋</p>
+              <p>메시지를 입력해 대화를 시작하세요.</p>
             </div>
           </div>
+
           <div class="chat-input-area">
             <input
               type="text"
@@ -339,11 +465,12 @@ onUnmounted(() => {
               @keypress="handleKeyPress"
               placeholder="채팅을 입력하세요..."
               class="chat-input"
+              :disabled="!isChatConnected"
             />
             <button
               class="send-btn"
               @click="sendMessage"
-              :disabled="!chatInput.trim()"
+              :disabled="!isChatConnected || !chatInput.trim()"
             >
               전송
             </button>
@@ -551,7 +678,7 @@ onUnmounted(() => {
 }
 
 .video-sidebar {
-  width: 350px;
+  width: 380px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -615,6 +742,10 @@ onUnmounted(() => {
   border-left: 2px solid #00ffa3;
 }
 
+.chat-message.system-message {
+  background-color: rgba(88, 88, 95, 0.35);
+}
+
 .chat-user {
   font-weight: 600;
   color: #00ffa3;
@@ -623,6 +754,10 @@ onUnmounted(() => {
 
 .chat-message.my-message .chat-user {
   color: #00d9ff;
+}
+
+.chat-message.system-message .chat-user {
+  color: #9ba0a8;
 }
 
 .chat-text {
@@ -699,7 +834,6 @@ onUnmounted(() => {
   color: #6e6e7a;
 }
 
-/* 스크롤바 스타일 */
 .chat-messages::-webkit-scrollbar,
 .video-main::-webkit-scrollbar {
   width: 8px;
@@ -721,10 +855,9 @@ onUnmounted(() => {
   background: #3a3a3d;
 }
 
-/* 반응형 */
 @media (max-width: 1200px) {
   .video-sidebar {
-    width: 300px;
+    width: 320px;
   }
 
   .stat-item {
@@ -744,11 +877,11 @@ onUnmounted(() => {
 
   .video-sidebar {
     width: 100%;
-    max-height: 300px;
+    max-height: 420px;
   }
 
   .chat-messages {
-    max-height: 200px;
+    max-height: 220px;
   }
 }
 
