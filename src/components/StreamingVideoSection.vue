@@ -7,6 +7,7 @@ const props = defineProps({
   id: Number,
   streamer: String,
   streamer_id: String,
+  roomId: [String, Number],
   title: String,
   thumbnail: String,
   viewers: Number
@@ -21,7 +22,7 @@ const isFollowing = ref(false)
 
 const isChatConnected = ref(false)
 const chatUsername = ref(localStorage.getItem('username') || localStorage.getItem('userId') || 'guest')
-const fixedRoomId = '807cf855-49f2-48ba-9475-0d2b9d51d3e4'
+const activeRoomId = () => String(props.roomId ?? '').trim()
 
 const reconnectBaseDelayMs = 1000
 const reconnectMaxDelayMs = 10000
@@ -215,10 +216,16 @@ const connectChat = async (isReconnect = false) => {
     return
   }
 
+  const roomId = activeRoomId()
+  if (!roomId) {
+    console.error('roomId가 없습니다. 스트림 선택 데이터(roomId/id)를 확인하세요.')
+    return
+  }
+
   try {
-    await fetchFromApi(`/chat/room/${encodeURIComponent(fixedRoomId)}`)
+    await fetchFromApi(`/chat/room/${encodeURIComponent(roomId)}`)
   } catch (error) {
-    console.error('고정 채팅방 확인 실패:', error)
+    console.error('채팅방 확인 실패:', error)
     return
   }
 
@@ -233,7 +240,7 @@ const connectChat = async (isReconnect = false) => {
       isChatConnected.value = true
       resetReconnectState()
 
-      client.subscribe(`/sub/chat/room/${fixedRoomId}`, (frame) => {
+      client.subscribe(`/sub/chat/room/${roomId}`, (frame) => {
         try {
           appendChatMessage(JSON.parse(frame.body))
         } catch (error) {
@@ -245,7 +252,7 @@ const connectChat = async (isReconnect = false) => {
         destination: '/pub/chat/message',
         body: JSON.stringify({
           type: 'ENTER',
-          roomId: fixedRoomId,
+          roomId,
           sender: chatUsername.value,
           message: ''
         })
@@ -295,7 +302,7 @@ const disconnectChat = () => {
         destination: '/pub/chat/message',
         body: JSON.stringify({
           type: 'QUIT',
-          roomId: fixedRoomId,
+          roomId: activeRoomId(),
           sender: chatUsername.value,
           message: ''
         })
@@ -329,7 +336,7 @@ const sendMessage = () => {
     destination: '/pub/chat/message',
     body: JSON.stringify({
       type: 'TALK',
-      roomId: fixedRoomId,
+      roomId: activeRoomId(),
       sender: chatUsername.value,
       message: messageContent
     })
@@ -382,7 +389,7 @@ onUnmounted(() => {
           <iframe
             width="100%"
             height="100%"
-            src="https://www.youtube.com/@codingpe"
+            src="https://www.youtube.com/embed/uQJgyGehgWw?si=p1BbdOxxwjQU5Tsv"
             title="Streaming Video"
             frameborder="0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"

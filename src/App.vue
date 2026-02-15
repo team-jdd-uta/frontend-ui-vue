@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import Header from './components/Header.vue'
 import Sidebar from './components/Sidebar.vue'
 import CategorySection from './components/CategorySection.vue'
@@ -20,10 +20,11 @@ const showMyPage = ref(false)
 const defaultCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
 const categories = ref(['전체', ...defaultCategories])
 const serverUrl = import.meta.env.VITE_APP_SERVER_URL
+const HOME_PATH = '/'
+const MY_PAGE_PATH = '/mypage'
 
-// 로컬 이미지 (public/images 폴더에 저장)
-//방 정보 하드코딩
-const liveStreams = ref([
+// 서버 호출 실패 시 fallback 데이터
+const fallbackStreams = [
   {
     id: 1,
     title: '즐거운 게임 방송 - 리그오브레전드 랭크 도전!',
@@ -123,7 +124,20 @@ const liveStreams = ref([
     isLive: true,
     tags: ['오버워치', '랭크', 'FPS']
   }
-])
+]
+const liveStreams = ref([...fallbackStreams])
+const roomThumbnails = [
+  '/images/stream-1.jpg',
+  '/images/stream-2.jpg',
+  '/images/stream-3.jpg',
+  '/images/stream-4.jpg',
+  '/images/stream-5.jpg',
+  '/images/stream-6.jpg',
+  '/images/stream-7.jpg',
+  '/images/stream-8.jpg',
+  '/images/stream-9.jpg',
+  '/images/stream-10.jpg'
+]
 const recommendedStreamers = ref([
   { name: '정찬혁', avatar: '👨‍💼', viewers: 45600, isLive: true },
   { name: '김현문', avatar: '👩‍🎤', viewers: 32100, isLive: true },
@@ -156,12 +170,68 @@ const selectNav = (nav) => {
   selectedNav.value = nav
 }
 
+const getRoomIdFromStream = (stream) => {
+  return String(stream?.roomId ?? stream?.id ?? '')
+}
+
+const findStreamByRoomId = (roomId) => {
+  return liveStreams.value.find((stream) => getRoomIdFromStream(stream) === String(roomId))
+}
+
+const setViewState = ({ stream = null, isMyPage = false }) => {
+  showMyPage.value = isMyPage
+  selectedStream.value = isMyPage ? null : stream
+}
+
+const pushRoute = (path) => {
+  if (window.location.pathname === path) {
+    return
+  }
+  window.history.pushState({}, '', path)
+}
+
+const routeToHome = () => {
+  setViewState({ stream: null, isMyPage: false })
+}
+
+const applyRouteFromPath = (path) => {
+  if (path === MY_PAGE_PATH) {
+    setViewState({ isMyPage: true })
+    return
+  }
+
+  if (path.startsWith('/room/')) {
+    const roomId = decodeURIComponent(path.replace('/room/', ''))
+    const matched = findStreamByRoomId(roomId)
+    if (matched) {
+      setViewState({ stream: matched })
+    } else {
+      routeToHome()
+      if (window.location.pathname !== HOME_PATH) {
+        window.history.replaceState({}, '', HOME_PATH)
+      }
+    }
+    return
+  }
+
+  routeToHome()
+}
+
+const handlePopState = () => {
+  applyRouteFromPath(window.location.pathname)
+}
+
 const openVideoModal = (stream) => {
-  selectedStream.value = stream
+  setViewState({ stream })
+  const roomId = getRoomIdFromStream(stream)
+  if (roomId) {
+    pushRoute(`/room/${encodeURIComponent(roomId)}`)
+  }
 }
 
 const closeVideoModal = () => {
-  selectedStream.value = null
+  routeToHome()
+  pushRoute(HOME_PATH)
 }
 
 const openLoginModal = () => {
@@ -183,7 +253,8 @@ const handleLogout = () => {
   console.log('로그아웃')
   isLoggedIn.value = false
   currentUser.value = null
-  showMyPage.value = false
+  routeToHome()
+  pushRoute(HOME_PATH)
   localStorage.removeItem('userId')
   localStorage.removeItem('token')
   localStorage.removeItem('username')
@@ -191,11 +262,54 @@ const handleLogout = () => {
 
 const openMyPage = () => {
   console.log('마이페이지 열기')
-  showMyPage.value = true
+  setViewState({ isMyPage: true })
+  pushRoute(MY_PAGE_PATH)
 }
 
 const closeMyPage = () => {
-  showMyPage.value = false
+  routeToHome()
+  pushRoute(HOME_PATH)
+}
+
+const handleStreamCreated = async () => {
+  await loadStreamsFromChatRooms()
+}
+
+const mapRoomsToStreams = (rooms) => {
+  return rooms.map((room, index) => ({
+    id: room.roomId,
+    roomId: room.roomId,
+    title: `${room.name} 라이브`,
+    streamer: room.name || `Room ${index + 1}`,
+    streamer_id: room.roomId,
+    category: '토크',
+    viewers: 100 + ((index + 1) * 37),
+    thumbnail: roomThumbnails[index % roomThumbnails.length],
+    isLive: true,
+    tags: ['LIVE', '채팅']
+  }))
+}
+
+const loadStreamsFromChatRooms = async () => {
+  if (!serverUrl) {
+    console.warn('VITE_APP_SERVER_URL 환경 변수가 설정되지 않았습니다.')
+    return
+  }
+
+  try {
+    const response = await fetch(`${serverUrl}/chat/rooms`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const rooms = await response.json()
+    if (!Array.isArray(rooms)) {
+      throw new Error('Invalid rooms payload')
+    }
+    liveStreams.value = mapRoomsToStreams(rooms)
+  } catch (error) {
+    console.error('Error fetching chat rooms from server:', error)
+    liveStreams.value = [...fallbackStreams]
+  }
 }
 
 // 서버 카테고리 로드
@@ -223,8 +337,11 @@ const loadCategories = async () => {
   }
 }
 
-onMounted(() => {
-  loadCategories()
+onMounted(async () => {
+  await Promise.all([
+    loadCategories(),
+    loadStreamsFromChatRooms()
+  ])
 
   // localStorage에서 로그인 상태 복원
   const userId = localStorage.getItem('userId')
@@ -240,6 +357,13 @@ onMounted(() => {
       token
     }
   }
+
+  applyRouteFromPath(window.location.pathname)
+  window.addEventListener('popstate', handlePopState)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('popstate', handlePopState)
 })
 </script>
 
@@ -269,6 +393,7 @@ onMounted(() => {
           <MyPage
             :userId="currentUser?.userId"
             @close="closeMyPage"
+            @stream-created="handleStreamCreated"
           />
         </template>
 
@@ -289,6 +414,7 @@ onMounted(() => {
             :id="selectedStream.id"
             :streamer="selectedStream.streamer"
             :streamer_id="selectedStream.streamer_id"
+            :room-id="selectedStream.roomId || selectedStream.id"
             :title="selectedStream.title"
             :thumbnail="selectedStream.thumbnail"
             :viewers="selectedStream.viewers"
