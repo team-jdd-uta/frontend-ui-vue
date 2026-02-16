@@ -286,6 +286,7 @@ onMounted(() => {
         <!-- 스트림 재생 영역 -->
         <template v-else>
           <StreamingVideoSection
+            :id="selectedStream.id"
             :streamer="selectedStream.streamer"
             :streamer_id="selectedStream.streamer_id"
             :title="selectedStream.title"

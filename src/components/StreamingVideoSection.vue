@@ -2,6 +2,7 @@
 import { defineProps, defineEmits, ref, onMounted, onUnmounted, nextTick } from 'vue'
 
 const props = defineProps({
+  id: Number,
   streamer: String,
   streamer_id: String,
   title: String,
@@ -66,6 +67,40 @@ const followingThisUser = async () => {
   } catch (error) {
     console.error('팔로우 요청 오류:', error)
   }
+}
+
+const postWatchHistory = () => {
+  /*
+  * Video를 Stream하는 websocket이 끊어질때 시청 마지막 시청 기록할것..
+  * 고도화때 비디오 스트림까지 한다면 고려해야 할 사항...
+  */
+  const serverUrl = import.meta.env.VITE_APP_SERVER_URL
+  const myUserId = localStorage.getItem('userId')
+  const streamerId = props.id //방 명을 그냥 id라고 해두었는데, room_id등으로 바꿔야 함..!!
+
+  console.log('시청 로그 기록 요청:', { myUserId, streamerId })
+
+  fetch(`${serverUrl}/watch_history`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ "userId": myUserId,
+      "videoId": streamerId,
+      "startedAt": new Date().toISOString().replace('Z',''),
+      "endedAt": new Date().toISOString().replace('Z','') }),
+    //replace를 쓴 이유는 서버쪽 포맷과 맞추기 위해. 대신 타임존 정보는 사라짐..
+  })
+    .then(response => {
+      if (response.ok) {
+        console.log('시청 로그 기록 성공!')
+      } else {
+        console.error('시청 로그 기록 실패:', response.status)
+      }
+    })
+    .catch(error => {
+      console.error('시청 로그 기록 오류:', error)
+    })
 }
 
 
@@ -194,6 +229,7 @@ const formatViewers = (count) => {
 
 onMounted(() => {
   getMessages()
+  postWatchHistory()
 })
 
 onUnmounted(() => {
