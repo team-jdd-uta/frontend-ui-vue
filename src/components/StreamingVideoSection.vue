@@ -19,7 +19,7 @@ let ws = null
 
 const followingThisUser = async () => {
   const serverUrl = import.meta.env.VITE_APP_SERVER_URL || 'http://localhost:8080'
-  const myUserId = 'user_001' // localStorage.getItem('userId')
+  const myUserId = localStorage.getItem('userId')
   const streamerId = props.streamer_id
 
   console.log('팔로우 요청:', { myUserId, streamerId, isFollowing: isFollowing.value })
