@@ -337,4 +337,21 @@ onMounted(() => {
   min-width: 0;
   overflow-y: auto;
 }
+
+.main-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.main-content::-webkit-scrollbar-track {
+  background: #18181b;
+}
+
+.main-content::-webkit-scrollbar-thumb {
+  background: #2a2a2e;
+  border-radius: 4px;
+}
+
+.main-content::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3d;
+}
 </style>
