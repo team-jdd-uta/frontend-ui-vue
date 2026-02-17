@@ -7,6 +7,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  isLoggingOut: {
+    type: Boolean,
+    default: false
+  },
   currentUser: {
     type: Object,
     default: null
@@ -63,7 +67,9 @@ const displayName = computed(() => {
               {{ displayName }}
             </button>
           </div>
-          <button class="btn-logout" @click="$emit('logout')">로그아웃</button>
+          <button class="btn-logout" :disabled="isLoggingOut" @click="$emit('logout')">
+            {{ isLoggingOut ? '로그아웃 중...' : '로그아웃' }}
+          </button>
         </template>
         <template v-else>
           <button class="btn-login" @click="$emit('login')">로그인</button>
@@ -245,5 +251,10 @@ const displayName = computed(() => {
   background-color: rgba(247, 0, 69, 0.1);
   transform: translateY(-1px);
 }
-</style>
 
+.btn-logout:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+</style>

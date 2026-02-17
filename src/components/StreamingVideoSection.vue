@@ -4,7 +4,7 @@ import SockJS from 'sockjs-client/dist/sockjs'
 import { Client } from '@stomp/stompjs'
 
 const props = defineProps({
-  id: Number,
+  id: [String, Number],
   streamer: String,
   streamer_id: String,
   roomId: [String, Number],
@@ -80,26 +80,28 @@ const followingThisUser = async () => {
 }
 
 const postWatchHistory = () => {
-  /*
-  * Video를 Stream하는 websocket이 끊어질때 시청 마지막 시청 기록할것..
-  * 고도화때 비디오 스트림까지 한다면 고려해야 할 사항...
-  */
-  const serverUrl = import.meta.env.VITE_APP_SERVER_URL
+  const serverUrl = (import.meta.env.VITE_APP_SERVER_URL || 'http://localhost:8080').replace(/\/$/, '')
   const myUserId = localStorage.getItem('userId')
-  const streamerId = props.id //방 명을 그냥 id라고 해두었는데, room_id등으로 바꿔야 함..!!
+  const videoId = Number(props.id)
 
-  console.log('시청 로그 기록 요청:', { myUserId, streamerId })
+  if (!myUserId) {
+    return
+  }
+
+  // backend(WatchHistoryController)는 videoId를 Long으로 파싱하므로 UUID roomId는 전송하지 않는다.
+  if (!Number.isInteger(videoId) || videoId <= 0) {
+    return
+  }
 
   fetch(`${serverUrl}/watch_history`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ "userId": myUserId,
-      "videoId": streamerId,
-      "startedAt": new Date().toISOString().replace('Z',''),
-      "endedAt": new Date().toISOString().replace('Z','') }),
-    //replace를 쓴 이유는 서버쪽 포맷과 맞추기 위해. 대신 타임존 정보는 사라짐..
+    body: JSON.stringify({
+      userId: String(myUserId),
+      videoId: String(videoId),
+    }),
   })
     .then(response => {
       if (response.ok) {
@@ -364,7 +366,6 @@ const formatViewers = (count) => {
 }
 
 onMounted(() => {
-  getMessages()
   postWatchHistory()
   connectChat(false)
 })

@@ -16,6 +16,7 @@ const selectedStream = ref(null)
 const isLoginModalOpen = ref(false)
 const isLoggedIn = ref(false)
 const currentUser = ref(null)
+const isLoggingOut = ref(false)
 const showMyPage = ref(false)
 const defaultCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
 const categories = ref(['전체', ...defaultCategories])
@@ -249,8 +250,7 @@ const handleLoginSuccess = (userData) => {
   // TODO: 추가 사용자 상태 업데이트
 }
 
-const handleLogout = () => {
-  console.log('로그아웃')
+const clearAuthState = () => {
   isLoggedIn.value = false
   currentUser.value = null
   routeToHome()
@@ -258,6 +258,39 @@ const handleLogout = () => {
   localStorage.removeItem('userId')
   localStorage.removeItem('token')
   localStorage.removeItem('username')
+}
+
+const handleLogout = async () => {
+  if (isLoggingOut.value) {
+    return
+  }
+
+  const userId = localStorage.getItem('userId') || currentUser.value?.userId
+  const logoutBaseUrl = (serverUrl || 'http://localhost:8080').replace(/\/$/, '')
+
+  isLoggingOut.value = true
+  try {
+    if (userId) {
+      const response = await fetch(`${logoutBaseUrl}/logout/${encodeURIComponent(userId)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+    }
+
+    clearAuthState()
+    console.log('로그아웃 완료')
+  } catch (error) {
+    console.error('로그아웃 API 호출 실패(로컬 로그아웃으로 진행):', error)
+    clearAuthState()
+  } finally {
+    isLoggingOut.value = false
+  }
 }
 
 const openMyPage = () => {
@@ -372,6 +405,7 @@ onUnmounted(() => {
     <Header
       :searchValue="searchValue"
       :isLoggedIn="isLoggedIn"
+      :isLoggingOut="isLoggingOut"
       :currentUser="currentUser"
       @search-input="(val) => searchValue = val"
       @login="openLoginModal"
