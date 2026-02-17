@@ -23,7 +23,7 @@ const chatList = ref([])
 const activeTab = ref('streams')
 const isCreatingBroadcast = ref(false)
 
-const serverUrl = import.meta.env.VITE_APP_SERVER_URL || 'http://localhost:8080'
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 const userId = localStorage.getItem('userId')
 
 const getChattingList = async () => {
@@ -34,7 +34,7 @@ const getChattingList = async () => {
   }
 
   try {
-    const response = await fetch(`${serverUrl}/api/comments/user/${userId}`)
+    const response = await fetch(`${apiBaseUrl}/comments/user/${userId}`)
     if (!response.ok) {
       console.error('작성한 댓글 목록 조회 실패:', response.status)
       chatList.value = []
@@ -62,7 +62,7 @@ const getfollowingList = async () => {
   const PAGE = 0
   const SIZE = 20
   try {
-    const response = await fetch(`${serverUrl}/users/${userId}/Ifollowing/${PAGE}/${SIZE}`)
+    const response = await fetch(`${apiBaseUrl}/users/${userId}/Ifollowing/${PAGE}/${SIZE}`)
     if (!response.ok) {
       console.error('팔로잉 목록 조회 실패:', response.status)
       followingList.value = []
@@ -96,7 +96,7 @@ const loadUserData = async () => {
 
   try {
     // 사용자 정보 로드
-    const response = await fetch(`${serverUrl}/users/info/${userId}`)
+    const response = await fetch(`${apiBaseUrl}/users/info/${userId}`)
     if (response.ok) {
       const data = await response.json()
       userInfo.value = {
@@ -146,7 +146,7 @@ const createBroadcast = async () => {
   isCreatingBroadcast.value = true
 
   try {
-    const response = await fetch(`${serverUrl}/chat/room?name=${encodeURIComponent(trimmedName)}`, {
+    const response = await fetch(`${apiBaseUrl}/chat/room?name=${encodeURIComponent(trimmedName)}`, {
       method: 'POST'
     })
     if (!response.ok) {

@@ -36,21 +36,20 @@ let reconnectAttempt = 0
 let reconnectStartedAtMs = null
 let userInitiatedDisconnect = false
 
-const primaryServerUrl = (import.meta.env.VITE_APP_SERVER_URL || 'http://localhost:8080').replace(/\/$/, '')
-const wsEndpoint = `${primaryServerUrl}/ws/chat`
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+const wsEndpoint = import.meta.env.VITE_WS_ENDPOINT || '/ws/chat'
 
 const followingThisUser = async () => {
-  const serverUrl = import.meta.env.VITE_APP_SERVER_URL || 'http://localhost:8080'
   const myUserId = localStorage.getItem('userId')
   const streamerId = props.streamer_id
 
-  if (!serverUrl) {
+  if (!myUserId) {
     return
   }
 
   try {
     if (isFollowing.value) {
-      const response = await fetch(`${serverUrl}/users/${myUserId}/unfollow`, {
+      const response = await fetch(`${apiBaseUrl}/users/${myUserId}/unfollow`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -62,7 +61,7 @@ const followingThisUser = async () => {
         isFollowing.value = false
       }
     } else {
-      const response = await fetch(`${serverUrl}/users/${myUserId}/follow`, {
+      const response = await fetch(`${apiBaseUrl}/users/${myUserId}/follow`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -80,7 +79,6 @@ const followingThisUser = async () => {
 }
 
 const postWatchHistory = () => {
-  const serverUrl = (import.meta.env.VITE_APP_SERVER_URL || 'http://localhost:8080').replace(/\/$/, '')
   const myUserId = localStorage.getItem('userId')
   const videoId = Number(props.id)
 
@@ -93,7 +91,7 @@ const postWatchHistory = () => {
     return
   }
 
-  fetch(`${serverUrl}/watch_history`, {
+  fetch(`${apiBaseUrl}/watch_history`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -134,7 +132,7 @@ const resetReconnectState = () => {
 }
 
 const fetchFromApi = async (path, options = {}) => {
-  const response = await fetch(`${primaryServerUrl}${path}`, options)
+  const response = await fetch(`${apiBaseUrl}${path}`, options)
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
   }

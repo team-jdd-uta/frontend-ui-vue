@@ -22,7 +22,7 @@ const isLoggingOut = ref(false)
 const showMyPage = ref(false)
 const defaultCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
 const categories = ref(['전체', ...defaultCategories])
-const serverUrl = import.meta.env.VITE_APP_SERVER_URL
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 const HOME_PATH = '/'
 const MY_PAGE_PATH = '/mypage'
 
@@ -282,12 +282,10 @@ const handleLogout = async () => {
   }
 
   const userId = localStorage.getItem('userId') || currentUser.value?.userId
-  const logoutBaseUrl = (serverUrl || 'http://localhost:8080').replace(/\/$/, '')
-
   isLoggingOut.value = true
   try {
     if (userId) {
-      const response = await fetch(`${logoutBaseUrl}/logout/${encodeURIComponent(userId)}`, {
+      const response = await fetch(`${apiBaseUrl}/logout/${encodeURIComponent(userId)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -340,13 +338,8 @@ const mapRoomsToStreams = (rooms) => {
 }
 
 const loadStreamsFromChatRooms = async () => {
-  if (!serverUrl) {
-    console.warn('VITE_APP_SERVER_URL 환경 변수가 설정되지 않았습니다.')
-    return
-  }
-
   try {
-    const response = await fetch(`${serverUrl}/chat/rooms`)
+    const response = await fetch(`${apiBaseUrl}/chat/rooms`)
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
@@ -363,13 +356,8 @@ const loadStreamsFromChatRooms = async () => {
 
 // 서버 카테고리 로드
 const loadCategories = async () => {
-  if (!serverUrl) {
-    console.warn('VITE_APP_SERVER_URL 환경 변수가 설정되지 않았습니다.')
-    return
-  }
-
   try {
-    const response = await fetch(`${serverUrl}/categories`)
+    const response = await fetch(`${apiBaseUrl}/categories`)
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }

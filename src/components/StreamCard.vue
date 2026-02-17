@@ -18,9 +18,6 @@ const handleCardClick = () => {
   emit('stream-click', props.stream)
 }
 
-const serverUrl = import.meta.env.VITE_APP_SERVER_URL
-
-
 </script>
 
 <template>
@@ -214,4 +211,3 @@ const serverUrl = import.meta.env.VITE_APP_SERVER_URL
   font-weight: 600;
 }
 </style>
-
