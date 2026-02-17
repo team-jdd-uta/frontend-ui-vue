@@ -13,6 +13,7 @@ const confirmPassword = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 
 const resetMessages = () => {
   errorMessage.value = ''
@@ -46,11 +47,9 @@ const handleSignup = async () => {
   }
 
   isLoading.value = true
-  const serverUrl = (import.meta.env.VITE_APP_SERVER_URL || 'http://localhost:8080').replace(/\/$/, '')
-
   try {
     const response = await fetch(
-      `${serverUrl}/signup/${encodeURIComponent(userId.value.trim())}/${encodeURIComponent(password.value)}`,
+      `${apiBaseUrl}/signup/${encodeURIComponent(userId.value.trim())}/${encodeURIComponent(password.value)}`,
       {
         method: 'POST',
         headers: {

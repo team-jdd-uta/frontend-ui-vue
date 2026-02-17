@@ -11,6 +11,7 @@ const userId = ref('')
 const password = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 
 const handleClose = () => {
   emit('close')
@@ -31,10 +32,8 @@ const handleLogin = async () => {
   isLoading.value = true
   errorMessage.value = ''
 
-  const serverUrl = import.meta.env.VITE_APP_SERVER_URL || 'http://localhost:8080'
-
   try {
-    const response = await fetch(`${serverUrl}/login/${encodeURIComponent(userId.value)}/${encodeURIComponent(password.value)}`, {
+    const response = await fetch(`${apiBaseUrl}/login/${encodeURIComponent(userId.value)}/${encodeURIComponent(password.value)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
