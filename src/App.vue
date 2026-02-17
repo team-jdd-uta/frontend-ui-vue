@@ -7,6 +7,7 @@ import StreamsGrid from './components/StreamsGrid.vue'
 import RightSidebar from './components/RightSidebar.vue'
 import StreamingVideoSection from './components/StreamingVideoSection.vue'
 import LoginPage from './components/LoginPage.vue'
+import SignUpPage from './components/SignUpPage.vue'
 import MyPage from './components/MyPage.vue'
 
 const selectedCategory = ref('전체')
@@ -14,6 +15,7 @@ const selectedNav = ref('홈')
 const searchValue = ref('')
 const selectedStream = ref(null)
 const isLoginModalOpen = ref(false)
+const isSignupModalOpen = ref(false)
 const isLoggedIn = ref(false)
 const currentUser = ref(null)
 const isLoggingOut = ref(false)
@@ -243,6 +245,20 @@ const closeLoginModal = () => {
   isLoginModalOpen.value = false
 }
 
+const openSignupModal = () => {
+  isLoginModalOpen.value = false
+  isSignupModalOpen.value = true
+}
+
+const closeSignupModal = () => {
+  isSignupModalOpen.value = false
+}
+
+const handleSignupSuccess = () => {
+  isSignupModalOpen.value = false
+  isLoginModalOpen.value = true
+}
+
 const handleLoginSuccess = (userData) => {
   console.log('로그인 성공:', userData)
   isLoggedIn.value = true
@@ -411,7 +427,7 @@ onUnmounted(() => {
       @login="openLoginModal"
       @logout="handleLogout"
       @mypage="openMyPage"
-      @signup="() => {}"
+      @signup="openSignupModal"
     />
 
     <div class="layout">
@@ -465,6 +481,12 @@ onUnmounted(() => {
       :isOpen="isLoginModalOpen"
       @close="closeLoginModal"
       @login-success="handleLoginSuccess"
+    />
+
+    <SignUpPage
+      :isOpen="isSignupModalOpen"
+      @close="closeSignupModal"
+      @signup-success="handleSignupSuccess"
     />
   </div>
 </template>
