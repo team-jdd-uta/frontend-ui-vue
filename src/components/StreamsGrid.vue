@@ -6,13 +6,6 @@ defineProps({
 })
 
 defineEmits(['stream-click'])
-
-const formatViewers = (count) => {
-  if (count >= 1000) {
-    return (count / 1000).toFixed(1) + 'K'
-  }
-  return count.toString()
-}
 </script>
 
 <template>
@@ -30,7 +23,11 @@ const formatViewers = (count) => {
       </div>
     </div>
 
-    <div class="streams-grid">
+    <div v-if="filteredStreams.length === 0" class="empty-state">
+      실행중인 방송이 없습니다.
+    </div>
+
+    <div v-else class="streams-grid">
       <StreamCard
         v-for="stream in filteredStreams"
         :key="stream.id"
@@ -112,5 +109,16 @@ const formatViewers = (count) => {
   gap: 20px;
   width: 100%;
 }
-</style>
 
+.empty-state {
+  width: 100%;
+  border: 1px dashed #3a3a3d;
+  border-radius: 12px;
+  padding: 36px 20px;
+  text-align: center;
+  color: #9ba0a8;
+  font-size: 15px;
+  font-weight: 600;
+  background-color: rgba(42, 42, 46, 0.25);
+}
+</style>

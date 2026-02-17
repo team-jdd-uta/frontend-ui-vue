@@ -5,7 +5,7 @@ const props = defineProps({
   userId: String
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'stream-created'])
 
 const userInfo = ref({
   userId: '',
@@ -21,6 +21,7 @@ const followingList = ref([])
 const watchHistory = ref([])
 const chatList = ref([])
 const activeTab = ref('streams')
+const isCreatingBroadcast = ref(false)
 
 const serverUrl = import.meta.env.VITE_APP_SERVER_URL || 'http://localhost:8080'
 const userId = localStorage.getItem('userId')
@@ -130,6 +131,47 @@ const handleClose = () => {
   emit('close')
 }
 
+const createBroadcast = async () => {
+  const roomName = window.prompt('생성할 방송(채팅방) 이름을 입력하세요.')
+  const trimmedName = roomName?.trim()
+
+  if (!trimmedName) {
+    return
+  }
+
+  if (isCreatingBroadcast.value) {
+    return
+  }
+
+  isCreatingBroadcast.value = true
+
+  try {
+    const response = await fetch(`${serverUrl}/chat/room?name=${encodeURIComponent(trimmedName)}`, {
+      method: 'POST'
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const createdRoom = await response.json()
+    myStreams.value.unshift({
+      id: createdRoom?.roomId || Date.now(),
+      title: `${createdRoom?.name || trimmedName} 라이브`,
+      viewers: 0,
+      date: new Date().toISOString().slice(0, 10)
+    })
+
+    userInfo.value.streams += 1
+    emit('stream-created', createdRoom)
+    alert('방송이 생성되었습니다.')
+  } catch (error) {
+    console.error('방송 생성 실패:', error)
+    alert('방송 생성에 실패했습니다.')
+  } finally {
+    isCreatingBroadcast.value = false
+  }
+}
+
 onMounted(() => {
   loadUserData()
   getfollowingList()
@@ -189,6 +231,12 @@ onMounted(() => {
       <div class="tab-content">
         <!-- 내 방송 목록 -->
         <div v-if="activeTab === 'streams'" class="streams-list">
+          <div class="stream-actions">
+            <button class="broadcast-btn" @click="createBroadcast" :disabled="isCreatingBroadcast">
+              {{ isCreatingBroadcast ? '생성 중...' : '방송하기' }}
+            </button>
+          </div>
+
           <div v-if="myStreams.length === 0" class="empty-state">
             <p>아직 방송 기록이 없습니다.</p>
           </div>
@@ -428,6 +476,32 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 15px;
+}
+
+.stream-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.broadcast-btn {
+  background: linear-gradient(135deg, #00ffa3 0%, #00d9ff 100%);
+  color: #0e0e10;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.broadcast-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.broadcast-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .empty-state {
