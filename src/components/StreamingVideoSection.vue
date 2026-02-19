@@ -37,7 +37,7 @@ let reconnectStartedAtMs = null
 let userInitiatedDisconnect = false
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
-const wsEndpoint = import.meta.env.VITE_WS_ENDPOINT || '/ws/chat'
+const wsEndpoint = '/ws/chat'
 
 const followingThisUser = async () => {
   const myUserId = localStorage.getItem('userId')
@@ -139,22 +139,45 @@ const fetchFromApi = async (path, options = {}) => {
   return response
 }
 
-const appendChatMessage = (payload) => {
+const appendSingleChatMessage = (payload) => {
   if (!payload) {
     return
   }
 
   const isSystem = payload.type === 'ENTER' || payload.type === 'QUIT'
-  const sender = payload.sender || 'SYSTEM'
+  const sender = (payload.sender || 'SYSTEM').trim()
 
   messages.value.push({
     id: Date.now() + Math.random(),
-    user: sender,
+    user: sender || 'SYSTEM',
     text: payload.message || '',
     isMine: !isSystem && sender === chatUsername.value,
     isSystem
   })
+}
 
+const appendChatMessage = (payload) => {
+  if (!payload) {
+    return
+  }
+
+  if (Array.isArray(payload)) {
+    payload.forEach((item) => appendSingleChatMessage(item))
+    scrollToBottom()
+    return
+  }
+
+  if (payload.type === 'BATCH') {
+    const batchedMessages = Array.isArray(payload.messages) ? payload.messages : []
+    if (batchedMessages.length === 0) {
+      return
+    }
+    batchedMessages.forEach((item) => appendSingleChatMessage(item))
+    scrollToBottom()
+    return
+  }
+
+  appendSingleChatMessage(payload)
   scrollToBottom()
 }
 
