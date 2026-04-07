@@ -23,6 +23,7 @@ const showMyPage = ref(false)
 const defaultCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
 const categories = ref(['전체', ...defaultCategories])
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+const BASE_PATH = '/front'
 const HOME_PATH = '/'
 const MY_PAGE_PATH = '/mypage'
 
@@ -171,6 +172,8 @@ const filterByCategory = (category) => {
 
 const selectNav = (nav) => {
   selectedNav.value = nav
+  routeToHome()
+  pushRoute(HOME_PATH)
 }
 
 const getRoomIdFromStream = (stream) => {
@@ -186,11 +189,33 @@ const setViewState = ({ stream = null, isMyPage = false }) => {
   selectedStream.value = isMyPage ? null : stream
 }
 
+const normalizeAppPath = (path) => {
+  if (!path || path === BASE_PATH) {
+    return HOME_PATH
+  }
+
+  if (path.startsWith(`${BASE_PATH}/`)) {
+    const normalized = path.slice(BASE_PATH.length)
+    return normalized || HOME_PATH
+  }
+
+  return path
+}
+
+const toBrowserPath = (appPath) => {
+  if (!appPath || appPath === HOME_PATH) {
+    return BASE_PATH
+  }
+
+  return `${BASE_PATH}${appPath}`
+}
+
 const pushRoute = (path) => {
-  if (window.location.pathname === path) {
+  const targetPath = toBrowserPath(path)
+  if (window.location.pathname === targetPath) {
     return
   }
-  window.history.pushState({}, '', path)
+  window.history.pushState({}, '', targetPath)
 }
 
 const routeToHome = () => {
@@ -198,20 +223,23 @@ const routeToHome = () => {
 }
 
 const applyRouteFromPath = (path) => {
-  if (path === MY_PAGE_PATH) {
+  const appPath = normalizeAppPath(path)
+
+  if (appPath === MY_PAGE_PATH) {
     setViewState({ isMyPage: true })
     return
   }
 
-  if (path.startsWith('/room/')) {
-    const roomId = decodeURIComponent(path.replace('/room/', ''))
+  if (appPath.startsWith('/room/')) {
+    const roomId = decodeURIComponent(appPath.replace('/room/', ''))
     const matched = findStreamByRoomId(roomId)
     if (matched) {
       setViewState({ stream: matched })
     } else {
       routeToHome()
-      if (window.location.pathname !== HOME_PATH) {
-        window.history.replaceState({}, '', HOME_PATH)
+      const homePath = toBrowserPath(HOME_PATH)
+      if (window.location.pathname !== homePath) {
+        window.history.replaceState({}, '', homePath)
       }
     }
     return
