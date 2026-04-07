@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const proxyTarget = env.VITE_PROXY_TARGET || env.VITE_APP_SERVER_URL || 'http://localhost:8080'
   const isHttpsTarget = proxyTarget.startsWith('https://')
-  const base = env.VITE_BASE_PATH || (mode === 'production' ? '/front/' : '/')
+  const base = env.VITE_BASE_PATH || '/'
 
   return {
     base,
