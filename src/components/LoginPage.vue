@@ -11,7 +11,7 @@ const userId = ref('')
 const password = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+const apiBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || '/api').replace(/\/$/, '')
 
 const handleClose = () => {
   emit('close')
@@ -33,11 +33,15 @@ const handleLogin = async () => {
   errorMessage.value = ''
 
   try {
-    const response = await fetch(`${apiBaseUrl}/login/${encodeURIComponent(userId.value)}/${encodeURIComponent(password.value)}`, {
+    const response = await fetch(`${apiBaseUrl}/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
-      }
+      },
+      body: JSON.stringify({
+        username: userId.value,
+        password: password.value
+      })
     })
 
     if (response.ok) {
