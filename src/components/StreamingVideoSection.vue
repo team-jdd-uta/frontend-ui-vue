@@ -152,7 +152,8 @@ const appendSingleChatMessage = (payload) => {
     user: sender || 'SYSTEM',
     text: payload.message || '',
     isMine: !isSystem && sender === chatUsername.value,
-    isSystem
+    isSystem,
+    isSuperChat: payload.isSuperChat === true
   })
 }
 
@@ -343,7 +344,7 @@ const disconnectChat = () => {
   isChatConnected.value = false
 }
 
-const sendMessage = () => {
+const sendMessage = (isSuperChat = false) => {
   const messageContent = chatInput.value.trim()
 
   if (!messageContent) {
@@ -361,11 +362,16 @@ const sendMessage = () => {
       type: 'TALK',
       roomId: activeRoomId(),
       sender: chatUsername.value,
-      message: messageContent
+      message: messageContent,
+      isSuperChat
     })
   })
 
   chatInput.value = ''
+}
+
+const sendSuperChat = () => {
+  sendMessage(true)
 }
 
 const handleKeyPress = (event) => {
@@ -475,7 +481,11 @@ onUnmounted(() => {
               :key="message.id"
               :class="[
                 'chat-message',
-                { 'my-message': message.isMine, 'system-message': message.isSystem }
+                {
+                  'my-message': message.isMine,
+                  'system-message': message.isSystem,
+                  'super-chat': message.isSuperChat
+                }
               ]"
             >
               <span class="chat-user">{{ message.isSystem ? '시스템' : message.user }}</span>
@@ -496,6 +506,15 @@ onUnmounted(() => {
               class="chat-input"
               :disabled="!isChatConnected"
             />
+            <button
+              class="superchat-btn"
+              @click="sendSuperChat"
+              :disabled="!isChatConnected || !chatInput.trim()"
+              title="수퍼챗 보내기"
+              aria-label="수퍼챗 보내기"
+            >
+              💵
+            </button>
             <button
               class="send-btn"
               @click="sendMessage"
@@ -775,6 +794,12 @@ onUnmounted(() => {
   background-color: rgba(88, 88, 95, 0.35);
 }
 
+.chat-message.super-chat {
+  background-color: rgba(255, 215, 0, 0.22);
+  border: 1px solid rgba(255, 215, 0, 0.7);
+  box-shadow: 0 0 0 1px rgba(255, 215, 0, 0.12), 0 8px 24px rgba(255, 215, 0, 0.16);
+}
+
 .chat-user {
   font-weight: 600;
   color: #00ffa3;
@@ -789,10 +814,19 @@ onUnmounted(() => {
   color: #9ba0a8;
 }
 
+.chat-message.super-chat .chat-user {
+  color: #ffd166;
+}
+
 .chat-text {
   color: #efeff1;
   word-break: break-word;
   flex: 1;
+}
+
+.chat-message.super-chat .chat-text {
+  color: #fff7df;
+  font-weight: 600;
 }
 
 .no-messages {
@@ -838,29 +872,50 @@ onUnmounted(() => {
   color: #6e6e7a;
 }
 
-.send-btn {
-  background: linear-gradient(135deg, #00ffa3 0%, #00d9ff 100%);
-  color: #0e0e10;
+.superchat-btn {
+  width: 42px;
+  min-width: 42px;
   border: none;
-  padding: 10px 20px;
   border-radius: 6px;
-  font-weight: 700;
-  font-size: 13px;
+  background-color: #ffd54a;
+  color: #18181b;
+  font-size: 18px;
   cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
+  transition: transform 0.2s, background-color 0.2s, opacity 0.2s;
+}
+
+.superchat-btn:hover:not(:disabled) {
+  background-color: #ffcc1f;
+  transform: translateY(-1px);
+}
+
+.superchat-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.send-btn {
+  border: none;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background-color: #00ffa3;
+  color: #0e0e10;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s, opacity 0.2s, transform 0.2s;
 }
 
 .send-btn:hover:not(:disabled) {
-  transform: scale(1.05);
-  box-shadow: 0 4px 12px rgba(0, 255, 163, 0.3);
+  background-color: #00d9ff;
+  transform: translateY(-1px);
 }
 
 .send-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
-  background: #2a2a2e;
-  color: #6e6e7a;
+  transform: none;
 }
 
 .chat-messages::-webkit-scrollbar,

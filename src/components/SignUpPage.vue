@@ -13,7 +13,7 @@ const confirmPassword = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+const apiBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL).replace(/\/$/, '')
 
 const resetMessages = () => {
   errorMessage.value = ''
@@ -48,28 +48,28 @@ const handleSignup = async () => {
 
   isLoading.value = true
   try {
-    const response = await fetch(
-      `${apiBaseUrl}/signup/${encodeURIComponent(userId.value.trim())}/${encodeURIComponent(password.value)}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    )
+    const response = await fetch(`${apiBaseUrl}/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        username: userId.value.trim(),
+        password: password.value
+      })
+    })
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
+    const data = await response.json().catch(() => null)
 
-    const data = await response.json()
-    if (data === true || data?.success === true) {
+    if (response.status === 201 && (data === true || data?.success === true)) {
       successMessage.value = '회원가입이 완료되었습니다. 로그인해 주세요.'
       setTimeout(() => {
         emit('signup-success')
       }, 400)
+    } else if (response.status === 409) {
+      errorMessage.value = data?.message || '이미 존재하는 계정입니다.'
     } else {
-      errorMessage.value = '회원가입에 실패했습니다.'
+      errorMessage.value = data?.message || '회원가입에 실패했습니다.'
     }
   } catch (error) {
     console.error('회원가입 오류:', error)
