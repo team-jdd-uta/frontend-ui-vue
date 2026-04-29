@@ -5,7 +5,7 @@ const props = defineProps({
   userId: String
 })
 
-const emit = defineEmits(['close', 'stream-created'])
+const emit = defineEmits(['close', 'stream-created', 'edit-profile'])
 
 const userInfo = ref({
   userId: '',
@@ -200,7 +200,7 @@ onMounted(() => {
           <h2 class="profile-name">{{ userInfo.username }}</h2>
           <p class="profile-email">{{ userInfo.email || userInfo.userId }}</p>
         </div>
-        <button class="edit-profile-btn">프로필 수정</button>
+        <button class="edit-profile-btn" @click="emit('edit-profile')">프로필 수정</button>
       </div>
 
       <div class="stats-grid">

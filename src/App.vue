@@ -9,6 +9,7 @@ import StreamingVideoSection from './components/StreamingVideoSection.vue'
 import LoginPage from './components/LoginPage.vue'
 import SignUpPage from './components/SignUpPage.vue'
 import MyPage from './components/MyPage.vue'
+import ProfileEditPage from './components/ProfileEditPage.vue'
 
 const selectedCategory = ref('전체')
 const selectedNav = ref('홈')
@@ -20,6 +21,7 @@ const isLoggedIn = ref(false)
 const currentUser = ref(null)
 const isLoggingOut = ref(false)
 const showMyPage = ref(false)
+const showProfileEditPage = ref(false)
 const defaultCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
 const categories = ref(['전체', ...defaultCategories])
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
@@ -183,8 +185,9 @@ const findStreamByRoomId = (roomId) => {
   return liveStreams.value.find((stream) => getRoomIdFromStream(stream) === String(roomId))
 }
 
-const setViewState = ({ stream = null, isMyPage = false }) => {
+const setViewState = ({ stream = null, isMyPage = false, isProfileEditPage = false }) => {
   showMyPage.value = isMyPage
+  showProfileEditPage.value = isProfileEditPage
   selectedStream.value = isMyPage ? null : stream
 }
 
@@ -196,10 +199,15 @@ const pushRoute = (path) => {
 }
 
 const routeToHome = () => {
-  setViewState({ stream: null, isMyPage: false })
+  setViewState({ stream: null, isMyPage: false, isProfileEditPage: false })
 }
 
 const applyRouteFromPath = (path) => {
+  if (path === `${MY_PAGE_PATH}/edit`) {
+    setViewState({ isProfileEditPage: true })
+    return
+  }
+
   if (path === MY_PAGE_PATH) {
     setViewState({ isMyPage: true })
     return
@@ -311,13 +319,31 @@ const handleLogout = async () => {
 
 const openMyPage = () => {
   console.log('마이페이지 열기')
-  setViewState({ isMyPage: true })
+  setViewState({ isMyPage: true, isProfileEditPage: false })
   pushRoute(MY_PAGE_PATH)
 }
 
 const closeMyPage = () => {
   routeToHome()
   pushRoute(HOME_PATH)
+}
+
+const openProfileEditPage = () => {
+  setViewState({ isMyPage: false, isProfileEditPage: true })
+  pushRoute(`${MY_PAGE_PATH}/edit`)
+}
+
+const closeProfileEditPage = () => {
+  setViewState({ isMyPage: true, isProfileEditPage: false })
+  pushRoute(MY_PAGE_PATH)
+}
+
+const handleProfileSaved = (updatedUser) => {
+  currentUser.value = {
+    ...(currentUser.value || {}),
+    ...updatedUser
+  }
+  closeProfileEditPage()
 }
 
 const handleStreamCreated = async () => {
@@ -434,6 +460,16 @@ onUnmounted(() => {
             :userId="currentUser?.userId"
             @close="closeMyPage"
             @stream-created="handleStreamCreated"
+            @edit-profile="openProfileEditPage"
+          />
+        </template>
+
+        <!-- 프로필 수정 페이지 -->
+        <template v-else-if="showProfileEditPage">
+          <ProfileEditPage
+            :currentUser="currentUser"
+            @close="closeProfileEditPage"
+            @saved="handleProfileSaved"
           />
         </template>
 
