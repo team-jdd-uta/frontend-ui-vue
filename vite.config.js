@@ -24,8 +24,6 @@ export default defineConfig(({ command, mode }) => {
     server: proxyTarget ? {
       host: true,
       allowedHosts: [
-        '2ea4-211-45-60-5.ngrok-free.app',
-        'b3f3-59-7-128-143.ngrok-free.app',
         '.ngrok-free.app',
       ],
       proxy: {

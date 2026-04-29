@@ -42,26 +42,21 @@ const followingThisUser = async () => {
   const myUserId = localStorage.getItem('userId')
   const streamerId = props.streamer_id
 
-  if (!myUserId) {
+  if (!myUserId || isFollowing.value) {
     return
   }
 
   try {
-    if (isFollowing.value) {
-      alert('팔로우 취소 API는 아직 서버에 구현되어 있지 않습니다.')
-      return
-    } else {
-      const response = await fetch(`${apiBaseUrl}/users/${myUserId}/follow`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ user_id: myUserId, streamerId })
-      })
+    const response = await fetch(`${apiBaseUrl}/users/${myUserId}/follow`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ user_id: myUserId, streamerId })
+    })
 
-      if (response.ok) {
-        isFollowing.value = true
-      }
+    if (response.ok) {
+      isFollowing.value = true
     }
   } catch (error) {
     console.error('팔로우 요청 오류:', error)
@@ -400,9 +395,11 @@ onUnmounted(() => {
                 </div>
                 <button
                   :class="['follow-btn', { following: isFollowing }]"
+                  :disabled="isFollowing"
+                  :title="isFollowing ? '팔로우 취소는 준비 중입니다' : ''"
                   @click="followingThisUser"
                 >
-                  {{ isFollowing ? '팔로우 끊기' : '팔로우' }}
+                  {{ isFollowing ? '팔로잉' : '팔로우' }}
                 </button>
               </div>
             </div>
@@ -644,10 +641,13 @@ onUnmounted(() => {
   border: 1px solid #53535f;
 }
 
-.follow-btn.following:hover {
-  background-color: #3a3a3d;
-  border-color: #f70045;
-  color: #f70045;
+.follow-btn.following:hover,
+.follow-btn:disabled:hover {
+  background-color: #2a2a2e;
+  border-color: #53535f;
+  color: #efeff1;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .meta-right {
