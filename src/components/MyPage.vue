@@ -146,7 +146,7 @@ const createBroadcast = async () => {
   isCreatingBroadcast.value = true
 
   try {
-    const response = await fetch(`${apiBaseUrl}/chat/room?name=${encodeURIComponent(trimmedName)}`, {
+    const response = await fetch(`${apiBaseUrl}/chat/rooms?name=${encodeURIComponent(trimmedName)}`, {
       method: 'POST'
     })
     if (!response.ok) {
