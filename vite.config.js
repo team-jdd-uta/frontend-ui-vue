@@ -28,7 +28,7 @@ export default defineConfig(({ command, mode }) => {
         '.ngrok-free.app',
       ],
       proxy: {
-        '/api/comments': {
+        '/api/user': {
           target: proxyTarget,
           changeOrigin: true,
           secure: isHttpsTarget,
@@ -36,16 +36,23 @@ export default defineConfig(({ command, mode }) => {
             'ngrok-skip-browser-warning': '1',
           },
         },
-        '/api': {
+        '/api/room': {
           target: proxyTarget,
           changeOrigin: true,
           secure: isHttpsTarget,
           headers: {
             'ngrok-skip-browser-warning': '1',
           },
-          rewrite: (path) => path.replace(/^\/api/, ''),
         },
-        '/socket.io': {
+        '/api/chat': {
+          target: proxyTarget,
+          changeOrigin: true,
+          secure: isHttpsTarget,
+          headers: {
+            'ngrok-skip-browser-warning': '1',
+          },
+        },
+        '/api/socket': {
           target: proxyTarget,
           changeOrigin: true,
           secure: isHttpsTarget,

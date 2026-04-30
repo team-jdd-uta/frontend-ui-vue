@@ -45,6 +45,11 @@ const handleLogin = async () => {
   errorMessage.value = ''
 
   try {
+    if (!apiBaseUrl) {
+      errorMessage.value = '로그인 서버가 설정되지 않았습니다. Cognito 연동이 필요합니다.'
+      return
+    }
+
     const response = await fetch(`${apiBaseUrl}/login`, {
       method: 'POST',
       headers: {

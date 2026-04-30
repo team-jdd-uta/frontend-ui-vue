@@ -1,14 +1,13 @@
 # frontend-ui-vue
 
-Kubernetes 채팅 MSA와 연동하는 Vue 3 프론트엔드입니다. 로그인/회원가입, 채팅방 목록, 방 생성, 방송 화면 진입, Socket.IO 기반 채팅 연결을 담당합니다.
+Kubernetes 채팅 MSA와 연동하는 Vue 3 프론트엔드입니다. 채팅방 목록, 방 생성, 방송 화면 진입, Socket.IO 기반 채팅 연결을 담당합니다.
 
 ## 역할
 
-- `/api/login`, `/api/register`로 login-service와 통신합니다.
-- `/api/chat/rooms`로 room-service 기반 채팅방 목록을 조회합니다.
-- `/api/chat/rooms?name=...`로 채팅방을 생성합니다.
-- `/socket.io`로 Socket.IO Gateway에 연결합니다.
-- `/api/users`, `/api/comments`로 user-service의 사용자/댓글 API를 호출합니다.
+- `/api/room/rooms`로 room-service 기반 채팅방 목록을 조회합니다.
+- `/api/room/rooms?name=...`로 채팅방을 생성합니다.
+- `/api/socket`으로 Socket.IO Gateway에 연결합니다.
+- `/api/user/users`, `/api/user/comments`로 user-service의 사용자/댓글 API를 호출합니다.
 
 ## 기술 스택
 
@@ -32,12 +31,10 @@ Kubernetes 채팅 MSA와 연동하는 Vue 3 프론트엔드입니다. 로그인/
 
 | Frontend path | 대상 |
 | --- | --- |
-| `/api/login` | login-service `/login` |
-| `/api/register` | login-service `/register` |
-| `/api/chat/rooms` | room-service `/rooms` |
-| `/api/users/...` | user-service `/users/...` |
-| `/api/comments/...` | user-service `/api/comments/...` |
-| `/socket.io` | socket-io-gateway Socket.IO endpoint |
+| `/api/room/rooms` | room-service `/rooms` |
+| `/api/user/users/...` | user-service `/users/...` |
+| `/api/user/comments/...` | user-service `/comments/...` |
+| `/api/socket` | socket-io-gateway Socket.IO endpoint |
 
 운영/Kubernetes에서는 Vite dev proxy가 아니라 Ingress가 위 경로를 라우팅합니다.
 
@@ -45,17 +42,20 @@ Kubernetes 채팅 MSA와 연동하는 Vue 3 프론트엔드입니다. 로그인/
 
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | `/api` | API base path |
+| `VITE_ROOM_SERVICE_URL` | `/api/room` | room-service base path |
+| `VITE_USER_INFO_SERVER_URL` | `/api/user` | user-service base path |
 | `VITE_SOCKET_BASE_URL` | `window.location.origin` | Socket.IO base URL |
+| `VITE_SOCKET_PATH` | `/api/socket` | Socket.IO path |
 | `VITE_PROXY_TARGET` | 없음 | `npm run dev`에서 사용할 backend/ingress target |
-| `VITE_APP_SERVER_URL` | 없음 | 기존 호환용 서버 URL |
 
 개발 서버 실행 시 `VITE_PROXY_TARGET`이 필요합니다.
 
 예:
 
 ```env
-VITE_API_BASE_URL=/api
+VITE_ROOM_SERVICE_URL=/api/room
+VITE_USER_INFO_SERVER_URL=/api/user
+VITE_SOCKET_PATH=/api/socket
 VITE_PROXY_TARGET=http://localhost:8088
 ```
 
@@ -97,7 +97,7 @@ Nginx는 SPA fallback을 위해 `try_files $uri $uri/ /index.html`을 사용합�
 
 ```js
 io(socketBaseUrl, {
-  path: '/socket.io',
+  path: '/api/socket',
   transports: ['websocket', 'polling']
 })
 ```
@@ -115,11 +115,11 @@ io(socketBaseUrl, {
 
 - Service port는 `80`입니다.
 - Ingress host 예: `skala3-cloud1-team9.cloud.skala-ai.com`
-- `/socket.io`는 WebSocket upgrade가 가능해야 합니다.
-- `/api/comments`는 rewrite 없이 user-service의 `/api/comments`로 전달되어야 합니다.
+- `/api/socket`는 WebSocket upgrade가 가능해야 합니다.
+- `/api/user/comments`는 user-service의 `/comments`로 전달되어야 합니다.
 
 ## 주의점
 
-- 로그인은 현재 backend-login-service stub 동작에 맞춰져 있습니다.
+- 로그인/회원가입은 Cognito 연동 후 확정되는 흐름입니다. 현재 모달은 서버 URL이 없으면 안내 메시지만 보여줍니다.
 - 방 조회 실패가 있어도 채팅 화면에서는 Socket.IO 연결을 계속 시도합니다.
 - `watch_history` 생성 API는 현재 분리된 user-service에 맞춰 비활성화되어 있습니다.

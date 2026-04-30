@@ -61,6 +61,11 @@ const handleSignup = async () => {
 
   isLoading.value = true
   try {
+    if (!apiBaseUrl) {
+      errorMessage.value = '회원가입 서버가 설정되지 않았습니다. Cognito 연동이 필요합니다.'
+      return
+    }
+
     const response = await fetch(
       `${apiBaseUrl}/register`,
       {
