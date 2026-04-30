@@ -12,6 +12,7 @@ const password = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
 const apiBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || '/api').replace(/\/$/, '')
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const handleClose = () => {
   emit('close')
@@ -28,8 +29,15 @@ const handleBackdropClick = (e) => {
 }
 
 const handleLogin = async () => {
-  if (!userId.value || !password.value) {
+  const username = userId.value.trim()
+
+  if (!username || !password.value) {
     errorMessage.value = '이메일과 비밀번호를 입력해주세요.'
+    return
+  }
+
+  if (!emailPattern.test(username)) {
+    errorMessage.value = '가입한 이메일 주소를 입력해주세요.'
     return
   }
 
@@ -43,7 +51,7 @@ const handleLogin = async () => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        username: userId.value.trim(),
+        username,
         password: password.value
       })
     })
@@ -54,8 +62,8 @@ const handleLogin = async () => {
 
       if (data === true || data.success === true) {
         const serverUser = data?.user || {}
-        const resolvedUserId = serverUser.id || serverUser.userId || userId.value.trim()
-        const resolvedUsername = serverUser.username || userId.value.trim()
+        const resolvedUserId = serverUser.id || serverUser.userId || username
+        const resolvedUsername = serverUser.username || username
 
         console.log('저장할 userId:', resolvedUserId)
 
@@ -120,12 +128,12 @@ const handleKeyPress = (event) => {
 
         <form class="login-form" @submit.prevent="handleLogin">
           <div class="form-group">
-            <label for="userId" class="form-label">아이디</label>
+            <label for="userId" class="form-label">이메일</label>
             <input
               id="userId"
               v-model="userId"
-              type="text"
-              placeholder="아이디를 입력하세요"
+              type="email"
+              placeholder="이메일을 입력하세요"
               class="form-input"
               @keypress="handleKeyPress"
               :disabled="isLoading"
