@@ -283,6 +283,9 @@ const clearAuthState = () => {
   pushRoute(HOME_PATH)
   localStorage.removeItem('userId')
   localStorage.removeItem('token')
+  localStorage.removeItem('idToken')
+  localStorage.removeItem('refreshToken')
+  localStorage.removeItem('tokenExpiresIn')
   localStorage.removeItem('username')
 }
 
@@ -412,6 +415,8 @@ onMounted(async () => {
   const userId = localStorage.getItem('userId')
   const username = localStorage.getItem('username')
   const token = localStorage.getItem('token')
+  const idToken = localStorage.getItem('idToken')
+  const refreshToken = localStorage.getItem('refreshToken')
 
   if (userId || token) {
     console.log('로그인 상태 복원:', { userId, username })
@@ -419,7 +424,9 @@ onMounted(async () => {
     currentUser.value = {
       userId,
       username,
-      token
+      token,
+      idToken,
+      refreshToken
     }
   }
 
@@ -507,6 +514,7 @@ onUnmounted(() => {
       :isOpen="isLoginModalOpen"
       @close="closeLoginModal"
       @login-success="handleLoginSuccess"
+      @signup-request="openSignupModal"
     />
 
     <SignUpPage
