@@ -11,7 +11,7 @@ const userId = ref('')
 const password = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
-const apiBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || '/api').replace(/\/$/, '')
+const apiBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const handleClose = () => {
