@@ -39,7 +39,7 @@ spec:
     JENKINS_AGENT_SERVICE_ACCOUNT = 'jenkins-kaniko-agent'
     BUILD_DIR = 'dist'
     FRONTEND_BUCKET = 'team9-mini-dev-frontend'
-    CLOUDFRONT_DISTRIBUTION_ID = 'TODO_CLOUDFRONT_DISTRIBUTION_ID'
+    CLOUDFRONT_DISTRIBUTION_ID = 'E3L4QIQPRHYJLA'
   }
 
   stages {
