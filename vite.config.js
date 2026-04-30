@@ -16,7 +16,7 @@ export default defineConfig(({ command, mode }) => {
   const isHttpsTarget = proxyTarget?.startsWith('https://') ?? false
 
   return {
-    base,
+  base: env.VITE_BASE || '/',
     plugins: [
       vue(),
       command === 'serve' ? vueDevTools() : undefined,

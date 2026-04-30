@@ -146,8 +146,17 @@ const createBroadcast = async () => {
   isCreatingBroadcast.value = true
 
   try {
-    const response = await fetch(`${apiBaseUrl}/chat/rooms?name=${encodeURIComponent(trimmedName)}`, {
-      method: 'POST'
+    const payload = {
+      name: trimmedName,
+      userId: userId
+    }
+
+    const response = await fetch(`${apiBaseUrl}/chat/rooms`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
     })
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)

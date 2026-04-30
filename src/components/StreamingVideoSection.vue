@@ -1,5 +1,6 @@
 <script setup>
-import { defineProps, defineEmits, ref, onMounted, onUnmounted, nextTick } from 'vue'
+import Hls from 'hls.js'
+import { defineProps, defineEmits, ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { io } from 'socket.io-client'
 
 const props = defineProps({
@@ -37,6 +38,157 @@ let userInitiatedDisconnect = false
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 const socketBaseUrl = (import.meta.env.VITE_SOCKET_BASE_URL || window.location.origin).replace(/\/$/, '')
+
+// HLS player config - use roomId as stream key
+const hlsBaseUrl = (import.meta.env.VITE_HLS_BASE_URL || 'http://localhost:8088').replace(/\/$/, '')
+const videoRef = ref(null)
+const status = ref('플레이리스트를 불러오는 중입니다...')
+
+let hls = null
+let retryTimer = null
+let watchdogTimer = null
+let lastCurrentTime = 0
+
+function destroyPlayer() {
+  if (retryTimer) {
+    window.clearTimeout(retryTimer)
+    retryTimer = null
+  }
+
+  if (hls) {
+    hls.off(Hls.Events.MANIFEST_PARSED)
+    hls.off(Hls.Events.ERROR)
+    hls.off(Hls.Events.BUFFER_EOS)
+    hls.off(Hls.Events.FRAG_BUFFERED)
+    try { hls.destroy() } catch (e) {}
+    hls = null
+  }
+
+  if (watchdogTimer) {
+    window.clearInterval(watchdogTimer)
+    watchdogTimer = null
+  }
+}
+
+function scheduleReload(message) {
+  if (retryTimer) return
+  status.value = message
+  retryTimer = window.setTimeout(() => {
+    retryTimer = null
+    loadStream()
+  }, 2000)
+}
+
+function buildPlaylistUrl() {
+  const roomId = String(props.roomId ?? '').trim()
+  if (!roomId) return ''
+  return `${hlsBaseUrl}/hls/${encodeURIComponent(roomId)}/index.m3u8`
+}
+
+function loadStream() {
+  const video = videoRef.value
+  if (!video) return
+
+  destroyPlayer()
+
+  const playlistUrl = buildPlaylistUrl()
+  if (!playlistUrl) {
+    status.value = '스트림 키(방 주소)가 없습니다.'
+    return
+  }
+
+  if (Hls.isSupported()) {
+    hls = new Hls({
+      lowLatencyMode: true,
+      liveSyncDurationCount: 2,
+      liveMaxLatencyDurationCount: 4,
+      maxBufferLength: 6,
+      backBufferLength: 0,
+      enableWorker: true
+    })
+
+    hls.loadSource(playlistUrl)
+    hls.attachMedia(video)
+
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      status.value = '스트림 연결 성공. 재생을 시작합니다.'
+      video.play().catch(() => {
+        status.value = '자동 재생이 차단되었습니다. 재생 버튼을 눌러주세요.'
+      })
+    })
+
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      if (data.fatal) {
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          scheduleReload(`네트워크 오류. 다시 연결 중 (${data.details})`)
+          return
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          try { hls.recoverMediaError(); hls.startLoad(-1) } catch (e) {}
+          scheduleReload(`미디어 오류 복구 중 (${data.details})`)
+          return
+        }
+        try { hls.startLoad(-1) } catch (e) {}
+        scheduleReload(`재생 오류. 다시 연결 중 (${data.details})`)
+      }
+    })
+
+    hls.on(Hls.Events.BUFFER_EOS, () => {
+      try { hls.startLoad(-1) } catch (e) {}
+      scheduleReload('스트림이 일시 종료되었습니다. 재연결 중입니다.')
+    })
+
+    hls.on(Hls.Events.FRAG_BUFFERED, () => {
+      if (retryTimer) {
+        window.clearTimeout(retryTimer)
+        retryTimer = null
+        status.value = '스트림 버퍼 갱신 — 재생 유지 중입니다.'
+      }
+      try { if (video && video.paused) video.play().catch(() => {}) } catch (e) {}
+    })
+
+    if (!watchdogTimer) {
+      lastCurrentTime = video.currentTime || 0
+      watchdogTimer = window.setInterval(() => {
+        try {
+          const v = videoRef.value
+          if (!v) return
+          const now = v.currentTime || 0
+          if (!v.paused && Math.abs(now - lastCurrentTime) < 0.5) {
+            if (hls) { try { hls.startLoad(-1) } catch (e) {} }
+            v.play().catch(() => {})
+          }
+          lastCurrentTime = now
+        } catch (e) {}
+      }, 3000)
+    }
+
+    video.addEventListener('ended', () => {
+      scheduleReload('스트림이 끝났습니다. 다시 연결 중입니다.')
+    }, { once: true })
+
+    return
+  }
+
+  if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = buildPlaylistUrl()
+    video.addEventListener('loadedmetadata', () => {
+      video.play().catch(() => { status.value = '자동 재생 차단됨. 재생 버튼을 눌러주세요.' })
+    }, { once: true })
+    video.addEventListener('ended', () => {
+      scheduleReload('스트림이 끝났습니다. 다시 연결 중입니다.')
+    }, { once: true })
+    status.value = '네이티브 HLS로 재생 중입니다.'
+    return
+  }
+
+  status.value = '이 브라우저는 HLS 재생을 지원하지 않습니다.'
+}
+
+watch(() => props.roomId, () => {
+  // reload stream when room changes
+  loadStream()
+})
 
 const followingThisUser = async () => {
   const myUserId = localStorage.getItem('userId')
@@ -353,10 +505,14 @@ const formatViewers = (count) => {
 onMounted(() => {
   postWatchHistory()
   connectChat(false)
+  // start video player for the current room
+  loadStream()
 })
 
 onUnmounted(() => {
   disconnectChat()
+  // clean up HLS player
+  destroyPlayer()
 })
 </script>
 
@@ -372,16 +528,9 @@ onUnmounted(() => {
     <div class="video-main">
       <div class="video-player-section">
         <div class="video-player-wrapper">
-          <iframe
-            width="100%"
-            height="100%"
-            src="https://www.youtube.com/embed/uQJgyGehgWw?si=p1BbdOxxwjQU5Tsv"
-            title="Streaming Video"
-            frameborder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowfullscreen
-          ></iframe>
+          <video ref="videoRef" controls playsinline muted style="width:100%; height:100%;"></video>
         </div>
+        <div class="player-status" v-if="status">{{ status }}</div>
 
         <div class="video-info">
           <h1 class="video-title">{{ title }}</h1>
