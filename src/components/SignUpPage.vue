@@ -14,6 +14,8 @@ const isLoading = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 const apiBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || '/api').replace(/\/$/, '')
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/
 
 const resetMessages = () => {
   errorMessage.value = ''
@@ -35,9 +37,20 @@ const handleBackdropClick = (e) => {
 
 const handleSignup = async () => {
   resetMessages()
+  const username = userId.value.trim()
 
-  if (!userId.value.trim() || !password.value) {
-    errorMessage.value = '아이디와 비밀번호를 입력해주세요.'
+  if (!username || !password.value) {
+    errorMessage.value = '이메일과 비밀번호를 입력해주세요.'
+    return
+  }
+
+  if (!emailPattern.test(username)) {
+    errorMessage.value = '이메일 주소 형식으로 가입해주세요.'
+    return
+  }
+
+  if (!passwordPattern.test(password.value)) {
+    errorMessage.value = '비밀번호는 8자 이상이며 대문자, 소문자, 숫자를 포함해야 합니다.'
     return
   }
 
@@ -56,7 +69,7 @@ const handleSignup = async () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          username: userId.value.trim(),
+          username,
           password: password.value
         })
       }
@@ -100,12 +113,12 @@ const handleKeyPress = (event) => {
 
         <form class="signup-form" @submit.prevent="handleSignup">
           <div class="form-group">
-            <label for="signup-userId" class="form-label">아이디</label>
+            <label for="signup-userId" class="form-label">이메일</label>
             <input
               id="signup-userId"
               v-model="userId"
-              type="text"
-              placeholder="아이디를 입력하세요"
+              type="email"
+              placeholder="이메일을 입력하세요"
               class="form-input"
               :disabled="isLoading"
               @keypress="handleKeyPress"
