@@ -63,7 +63,7 @@ spec:
     stage('Deploy to S3') {
       when {
         allOf {
-          branch 'main'
+          expression { return env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main' }
           expression { return params.DEPLOY }
         }
       }
