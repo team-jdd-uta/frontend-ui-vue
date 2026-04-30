@@ -39,7 +39,7 @@ const handleLogin = async () => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        username: userId.value,
+        username: userId.value.trim(),
         password: password.value
       })
     })
@@ -48,22 +48,20 @@ const handleLogin = async () => {
       const data = await response.json()
       console.log('로그인 성공 - 서버 응답:', data)
 
-      // 서버는 true/false만 반환
       if (data === true || data.success === true) {
-        // 입력한 userId를 localStorage에 저장
-        const inputUserId = userId.value
-        const inputPassword = password.value
+        const serverUser = data?.user || {}
+        const resolvedUserId = serverUser.id || serverUser.userId || userId.value.trim()
+        const resolvedUsername = serverUser.username || userId.value.trim()
 
-        console.log('저장할 userId:', inputUserId)
+        console.log('저장할 userId:', resolvedUserId)
 
-        localStorage.setItem('userId', inputUserId)
-        localStorage.setItem('username', inputUserId) // username도 userId와 동일하게 저장
-        console.log('userId 저장 완료:', inputUserId)
+        localStorage.setItem('userId', resolvedUserId)
+        localStorage.setItem('username', resolvedUsername)
+        console.log('userId 저장 완료:', resolvedUserId)
 
-        // 부모 컴포넌트에 전달할 데이터
         const userData = {
-          userId: inputUserId,
-          username: inputUserId,
+          userId: resolvedUserId,
+          username: resolvedUsername,
           isLoggedIn: true
         }
 

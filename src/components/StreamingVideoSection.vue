@@ -1,7 +1,6 @@
 <script setup>
 import { defineProps, defineEmits, ref, onMounted, onUnmounted, nextTick } from 'vue'
-import SockJS from 'sockjs-client/dist/sockjs'
-import { Client } from '@stomp/stompjs'
+import { io } from 'socket.io-client'
 
 const props = defineProps({
   id: [String, Number],
@@ -29,7 +28,7 @@ const reconnectMaxDelayMs = 10000
 const reconnectJitterMaxMs = 300
 const reconnectMaxDurationMs = 60000
 
-let stompClient = null
+let socketClient = null
 let reconnectTimer = null
 let reconnectScheduled = false
 let reconnectAttempt = 0
@@ -37,41 +36,27 @@ let reconnectStartedAtMs = null
 let userInitiatedDisconnect = false
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
-const wsEndpoint = '/ws/chat'
+const socketBaseUrl = (import.meta.env.VITE_SOCKET_BASE_URL || window.location.origin).replace(/\/$/, '')
 
 const followingThisUser = async () => {
   const myUserId = localStorage.getItem('userId')
   const streamerId = props.streamer_id
 
-  if (!myUserId) {
+  if (!myUserId || isFollowing.value) {
     return
   }
 
   try {
-    if (isFollowing.value) {
-      const response = await fetch(`${apiBaseUrl}/users/${myUserId}/unfollow`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ user_id: myUserId, streamerId })
-      })
+    const response = await fetch(`${apiBaseUrl}/users/${myUserId}/follow`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ user_id: myUserId, streamerId })
+    })
 
-      if (response.ok) {
-        isFollowing.value = false
-      }
-    } else {
-      const response = await fetch(`${apiBaseUrl}/users/${myUserId}/follow`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ user_id: myUserId, streamerId })
-      })
-
-      if (response.ok) {
-        isFollowing.value = true
-      }
+    if (response.ok) {
+      isFollowing.value = true
     }
   } catch (error) {
     console.error('팔로우 요청 오류:', error)
@@ -79,38 +64,8 @@ const followingThisUser = async () => {
 }
 
 const postWatchHistory = () => {
-  const myUserId = localStorage.getItem('userId')
-  const videoId = Number(props.id)
-
-  if (!myUserId) {
-    return
-  }
-
-  // backend(WatchHistoryController)는 videoId를 Long으로 파싱하므로 UUID roomId는 전송하지 않는다.
-  if (!Number.isInteger(videoId) || videoId <= 0) {
-    return
-  }
-
-  fetch(`${apiBaseUrl}/watch_history`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      userId: String(myUserId),
-      videoId: String(videoId),
-    }),
-  })
-    .then(response => {
-      if (response.ok) {
-        console.log('시청 로그 기록 성공!')
-      } else {
-        console.error('시청 로그 기록 실패:', response.status)
-      }
-    })
-    .catch(error => {
-      console.error('시청 로그 기록 오류:', error)
-    })
+  // 현재 분리된 user-service에는 watch_history 생성 API가 없다.
+  // 조회 API가 추가되면 서버 계약에 맞춰 다시 연결한다.
 }
 
 const scrollToBottom = () => {
@@ -145,12 +100,29 @@ const appendSingleChatMessage = (payload) => {
   }
 
   const isSystem = payload.type === 'ENTER' || payload.type === 'QUIT'
-  const sender = (payload.sender || 'SYSTEM').trim()
+  const rawSender = typeof payload.sender === 'string' ? payload.sender.trim() : ''
+  const sender = rawSender || 'SYSTEM'
+  const rawText = typeof payload.message === 'string' ? payload.message.trim() : ''
+  let text = rawText
+
+  if (isSystem && !text) {
+    if (payload.type === 'ENTER') {
+      text = `${rawSender || '사용자'}님이 입장하셨습니다.`
+    } else if (payload.type === 'QUIT') {
+      text = `${rawSender || '사용자'}님이 퇴장하셨습니다.`
+    } else {
+      text = '시스템 메시지'
+    }
+  }
+
+  if (!isSystem && !text) {
+    return
+  }
 
   messages.value.push({
     id: Date.now() + Math.random(),
     user: sender || 'SYSTEM',
-    text: payload.message || '',
+    text,
     isMine: !isSystem && sender === chatUsername.value,
     isSystem,
     isSuperChat: payload.isSuperChat === true
@@ -188,15 +160,15 @@ const returnToDisconnectedState = (reason) => {
   isChatConnected.value = false
   resetReconnectState()
 
-  if (stompClient) {
+  if (socketClient) {
     try {
-      stompClient.deactivate()
+      socketClient.disconnect()
     } catch (error) {
       console.warn('채팅 연결 정리 중 오류:', error)
     }
   }
 
-  stompClient = null
+  socketClient = null
 }
 
 const scheduleReconnect = (reason, delayMs) => {
@@ -247,98 +219,89 @@ const connectChat = async (isReconnect = false) => {
   }
 
   try {
-    await fetchFromApi(`/chat/room/${encodeURIComponent(roomId)}`)
+    await fetchFromApi(`/chat/rooms/${encodeURIComponent(roomId)}`)
   } catch (error) {
-    console.error('채팅방 확인 실패:', error)
-    return
+    console.warn('채팅방 확인 실패, 소켓 연결은 계속 시도합니다:', error)
   }
 
   userInitiatedDisconnect = false
 
-  const client = new Client({
-    webSocketFactory: () => new SockJS(wsEndpoint),
-    reconnectDelay: 0,
-    debug: () => {},
-    onConnect: () => {
-      stompClient = client
-      isChatConnected.value = true
-      resetReconnectState()
+  if (!isReconnect) {
+    messages.value = []
+  }
 
-      client.subscribe(`/sub/chat/room/${roomId}`, (frame) => {
-        try {
-          appendChatMessage(JSON.parse(frame.body))
-        } catch (error) {
-          console.error('메시지 파싱 오류:', error)
-        }
-      })
-
-      client.publish({
-        destination: '/pub/chat/message',
-        body: JSON.stringify({
-          type: 'ENTER',
-          roomId,
-          sender: chatUsername.value,
-          message: ''
-        })
-      })
-
-      if (!isReconnect) {
-        messages.value = []
-      }
-    },
-    onStompError: (frame) => {
-      console.error('STOMP error:', frame)
-      isChatConnected.value = false
-      scheduleReconnect('stomp error')
-    },
-    onWebSocketError: (event) => {
-      console.error('WebSocket error:', event)
-      isChatConnected.value = false
-      scheduleReconnect('socket error')
-    },
-    onWebSocketClose: (event) => {
-      isChatConnected.value = false
-
-      if (userInitiatedDisconnect) {
-        return
-      }
-
-      if (event && (event.code === 4002 || String(event.reason || '').includes('Invalid payload'))) {
-        returnToDisconnectedState('invalid payload')
-        return
-      }
-
-      scheduleReconnect('socket closed')
-    }
+  const client = io(socketBaseUrl, {
+    path: '/socket.io',
+    autoConnect: false,
+    reconnection: false,
+    transports: ['websocket', 'polling']
   })
 
-  stompClient = client
-  client.activate()
+  client.on('connect', () => {
+    socketClient = client
+    resetReconnectState()
+
+    client.emit('ENTER', { roomId, sender: chatUsername.value })
+  })
+
+  client.on('ENTER_ACK', () => {
+    isChatConnected.value = true
+    appendChatMessage({
+      type: 'ENTER',
+      roomId,
+      sender: chatUsername.value,
+      message: ''
+    })
+  })
+
+  client.on('TALK', (payload) => {
+    appendChatMessage(payload)
+  })
+
+  client.on('connect_error', (error) => {
+    console.error('Socket.IO connect error:', error?.message || error)
+    isChatConnected.value = false
+    scheduleReconnect('socket connect error')
+  })
+
+  client.on('error', (error) => {
+    console.error('Socket.IO error:', error?.message || error)
+    isChatConnected.value = false
+    scheduleReconnect(error?.code || 'socket error')
+  })
+
+  client.on('disconnect', (reason) => {
+    isChatConnected.value = false
+
+    if (userInitiatedDisconnect) {
+      return
+    }
+
+    scheduleReconnect(reason || 'socket disconnected')
+  })
+
+  socketClient = client
+  client.connect()
 }
 
 const disconnectChat = () => {
   userInitiatedDisconnect = true
   resetReconnectState()
 
-  if (stompClient && stompClient.connected) {
+  if (socketClient && socketClient.connected) {
     try {
-      stompClient.publish({
-        destination: '/pub/chat/message',
-        body: JSON.stringify({
-          type: 'QUIT',
-          roomId: activeRoomId(),
-          sender: chatUsername.value,
-          message: ''
-        })
+      socketClient.emit('QUIT', {
+        roomId: activeRoomId(),
+        sender: chatUsername.value
       })
     } catch (error) {
       console.warn('QUIT 전송 실패:', error)
     }
   }
 
-  if (stompClient) {
-    stompClient.deactivate()
-    stompClient = null
+  if (socketClient) {
+    socketClient.disconnect()
+    socketClient = null
   }
 
   isChatConnected.value = false
@@ -351,20 +314,15 @@ const sendMessage = (isSuperChat = false) => {
     return
   }
 
-  if (!stompClient || !stompClient.connected) {
+  if (!socketClient || !socketClient.connected) {
     alert('채팅 서버에 연결되어 있지 않습니다.')
     return
   }
 
-  stompClient.publish({
-    destination: '/pub/chat/message',
-    body: JSON.stringify({
-      type: 'TALK',
-      roomId: activeRoomId(),
-      sender: chatUsername.value,
-      message: messageContent,
-      isSuperChat
-    })
+  socketClient.emit('TALK', {
+    roomId: activeRoomId(),
+    sender: chatUsername.value,
+    message: messageContent
   })
 
   chatInput.value = ''
@@ -437,9 +395,11 @@ onUnmounted(() => {
                 </div>
                 <button
                   :class="['follow-btn', { following: isFollowing }]"
+                  :disabled="isFollowing"
+                  :title="isFollowing ? '팔로우 취소는 준비 중입니다' : ''"
                   @click="followingThisUser"
                 >
-                  {{ isFollowing ? '팔로우 끊기' : '팔로우' }}
+                  {{ isFollowing ? '팔로잉' : '팔로우' }}
                 </button>
               </div>
             </div>
@@ -681,10 +641,13 @@ onUnmounted(() => {
   border: 1px solid #53535f;
 }
 
-.follow-btn.following:hover {
-  background-color: #3a3a3d;
-  border-color: #f70045;
-  color: #f70045;
+.follow-btn.following:hover,
+.follow-btn:disabled:hover {
+  background-color: #2a2a2e;
+  border-color: #53535f;
+  color: #efeff1;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .meta-right {
