@@ -13,7 +13,7 @@ spec:
         - cat
       tty: true
     - name: aws-cli
-      image: public.ecr.aws/aws-cli/aws-cli:2
+      image: public.ecr.aws/aws-cli/aws-cli:latest
       command:
         - cat
       tty: true
