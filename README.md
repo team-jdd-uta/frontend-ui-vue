@@ -45,10 +45,10 @@ Kubernetes 채팅 MSA와 연동하는 Vue 3 프론트엔드입니다. 로그인/
 
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | `/api` | API base path |
+| `VITE_API_BASE_URL` | `/api` | 로그인, 회원가입, 채팅방, 사용자, 댓글 API base path |
 | `VITE_SOCKET_BASE_URL` | `window.location.origin` | Socket.IO base URL |
+| `VITE_HLS_BASE_URL` | `http://localhost:8088` | HLS playlist base URL |
 | `VITE_PROXY_TARGET` | 없음 | `npm run dev`에서 사용할 backend/ingress target |
-| `VITE_APP_SERVER_URL` | 없음 | 기존 호환용 서버 URL |
 
 개발 서버 실행 시 `VITE_PROXY_TARGET`이 필요합니다.
 
@@ -56,6 +56,8 @@ Kubernetes 채팅 MSA와 연동하는 Vue 3 프론트엔드입니다. 로그인/
 
 ```env
 VITE_API_BASE_URL=/api
+VITE_SOCKET_BASE_URL=http://localhost:3000
+VITE_HLS_BASE_URL=http://localhost:8088
 VITE_PROXY_TARGET=http://localhost:8088
 ```
 

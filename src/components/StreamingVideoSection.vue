@@ -2,6 +2,7 @@
 import Hls from 'hls.js'
 import { defineProps, defineEmits, ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { io } from 'socket.io-client'
+import { apiBaseUrl, hlsBaseUrl, socketBaseUrl } from '@/config/runtime'
 
 const props = defineProps({
   id: [String, Number],
@@ -36,11 +37,7 @@ let reconnectAttempt = 0
 let reconnectStartedAtMs = null
 let userInitiatedDisconnect = false
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
-const socketBaseUrl = (import.meta.env.VITE_SOCKET_BASE_URL || window.location.origin).replace(/\/$/, '')
-
 // HLS player config - use roomId as stream key
-const hlsBaseUrl = (import.meta.env.VITE_HLS_BASE_URL || 'http://localhost:8088').replace(/\/$/, '')
 const videoRef = ref(null)
 const status = ref('플레이리스트를 불러오는 중입니다...')
 

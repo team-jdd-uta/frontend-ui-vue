@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { apiBaseUrl } from '@/config/runtime'
 
 const props = defineProps({
   userId: String
@@ -23,7 +24,6 @@ const chatList = ref([])
 const activeTab = ref('streams')
 const isCreatingBroadcast = ref(false)
 
-const apiBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL).replace(/\/$/, '')
 const userId = localStorage.getItem('userId')
 
 const getChattingList = async () => {

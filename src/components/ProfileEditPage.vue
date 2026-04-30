@@ -1,5 +1,6 @@
 <script setup>
 import { computed, reactive, watch } from 'vue'
+import { apiBaseUrl } from '@/config/runtime'
 
 const props = defineProps({
   currentUser: {
@@ -9,8 +10,6 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close', 'saved'])
-
-const apiBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || '').replace(/\/$/, '')
 
 const form = reactive({
   userId: '',

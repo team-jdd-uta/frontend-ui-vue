@@ -10,6 +10,7 @@ import LoginPage from './components/LoginPage.vue'
 import SignUpPage from './components/SignUpPage.vue'
 import MyPage from './components/MyPage.vue'
 import ProfileEditPage from './components/ProfileEditPage.vue'
+import { apiBaseUrl } from '@/config/runtime'
 
 const selectedCategory = ref('전체')
 const selectedNav = ref('홈')
@@ -24,7 +25,6 @@ const showMyPage = ref(false)
 const showProfileEditPage = ref(false)
 const defaultCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
 const categories = ref(['전체', ...defaultCategories])
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 const HOME_PATH = '/'
 const MY_PAGE_PATH = '/mypage'
 
