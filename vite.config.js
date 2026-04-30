@@ -8,6 +8,7 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const proxyTarget = env.VITE_PROXY_TARGET
+  const base = env.VITE_BASE_PATH || '/'
 
   if (command === 'serve' && !proxyTarget) {
     throw new Error('VITE_PROXY_TARGET is required in .env for dev proxy.')
