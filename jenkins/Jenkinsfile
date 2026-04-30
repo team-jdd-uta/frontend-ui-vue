@@ -40,6 +40,9 @@ spec:
     BUILD_DIR = 'dist'
     FRONTEND_BUCKET = 'team9-mini-dev-frontend'
     CLOUDFRONT_DISTRIBUTION_ID = 'E3L4QIQPRHYJLA'
+    VITE_LOGIN_SERVER_URL = 'http://login.team9.cloud.skala-ai.com'
+    VITE_USER_INFO_SERVER_URL = 'http://backend.team9.cloud.skala-ai.com'
+    VITE_API_BASE_URL = '/api'
   }
 
   stages {
