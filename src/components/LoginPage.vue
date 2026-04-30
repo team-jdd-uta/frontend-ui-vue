@@ -5,7 +5,7 @@ defineProps({
   isOpen: Boolean
 })
 
-const emit = defineEmits(['close', 'login-success'])
+const emit = defineEmits(['close', 'login-success', 'signup-request'])
 
 const userId = ref('')
 const password = ref('')
@@ -15,6 +15,10 @@ const apiBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL).replace(/\/$/, '')
 
 const handleClose = () => {
   emit('close')
+}
+
+const handleSignupRequest = () => {
+  emit('signup-request')
 }
 
 const handleBackdropClick = (e) => {
@@ -55,13 +59,29 @@ const handleLogin = async () => {
 
         console.log('저장할 userId:', resolvedUserId)
 
+        const tokens = data?.tokens || {}
+        const accessToken = tokens.accessToken || ''
+
         localStorage.setItem('userId', resolvedUserId)
         localStorage.setItem('username', resolvedUsername)
+        if (accessToken) {
+          localStorage.setItem('token', accessToken)
+        }
+        if (tokens.idToken) {
+          localStorage.setItem('idToken', tokens.idToken)
+        }
+        if (tokens.refreshToken) {
+          localStorage.setItem('refreshToken', tokens.refreshToken)
+        }
+        if (tokens.expiresIn) {
+          localStorage.setItem('tokenExpiresIn', String(tokens.expiresIn))
+        }
         console.log('userId 저장 완료:', resolvedUserId)
 
         const userData = {
           userId: resolvedUserId,
           username: resolvedUsername,
+          token: accessToken,
           isLoggedIn: true
         }
 
@@ -104,7 +124,7 @@ const handleKeyPress = (event) => {
             <input
               id="userId"
               v-model="userId"
-              type="userId"
+              type="text"
               placeholder="아이디를 입력하세요"
               class="form-input"
               @keypress="handleKeyPress"
@@ -137,7 +157,8 @@ const handleKeyPress = (event) => {
         <div class="login-footer">
           <a href="#" class="footer-link">비밀번호를 잊으셨나요?</a>
           <div class="signup-link">
-            계정이 없으신가요? <a href="#" class="link-primary">회원가입</a>
+            계정이 없으신가요?
+            <a href="#" class="link-primary" @click.prevent="handleSignupRequest">회원가입</a>
           </div>
         </div>
       </div>
