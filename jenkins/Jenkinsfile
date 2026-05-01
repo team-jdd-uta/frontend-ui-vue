@@ -1,3 +1,5 @@
+import groovy.json.JsonOutput
+
 pipeline {
   agent {
     kubernetes {
@@ -20,6 +22,11 @@ spec:
       env:
         - name: AWS_STS_REGIONAL_ENDPOINTS
           value: regional
+    - name: curl
+      image: curlimages/curl:8.11.1
+      command:
+        - cat
+      tty: true
 """
     }
   }
@@ -32,6 +39,7 @@ spec:
 
   parameters {
     booleanParam(name: 'DEPLOY', defaultValue: false, description: 'main 브랜치에서 S3/CloudFront 배포를 실행합니다.')
+    string(name: 'APPROVAL_TIMEOUT_MINUTES', defaultValue: '30', description: 'Webhook-triggered main branch builds wait this many minutes for approval.')
   }
 
   environment {
@@ -43,12 +51,52 @@ spec:
     VITE_LOGIN_SERVER_URL = 'https://login.team9.cloud.skala-ai.com'
     VITE_USER_INFO_SERVER_URL = 'https://backend.team9.cloud.skala-ai.com'
     VITE_API_BASE_URL = '/api'
+    JENKINS_PUBLIC_URL = 'http://jenkins.team9.cloud.skala-ai.com'
+    SLACK_WEBHOOK_CREDENTIALS_ID = 'jenkins-slack-webhook'
   }
 
   stages {
     stage('Checkout') {
       steps {
         checkout scm
+      }
+    }
+
+
+    stage('Prepare') {
+      steps {
+        script {
+          env.IS_MAIN_BUILD = ((env.BRANCH_NAME == 'main') || (env.GIT_BRANCH == 'origin/main') || (env.GIT_BRANCH == 'main')).toString()
+          env.DEPLOY_EFFECTIVE = params.DEPLOY.toString()
+          echo "Main build: ${env.IS_MAIN_BUILD}"
+        }
+      }
+    }
+
+    stage('Approval') {
+      when {
+        expression { return env.IS_MAIN_BUILD == 'true' }
+      }
+      steps {
+        script {
+          notifySlack("Code change detected for *${env.JOB_NAME}* #${env.BUILD_NUMBER}.\nBranch: ${env.BRANCH_NAME ?: env.GIT_BRANCH}\nCommit: ${env.GIT_COMMIT}\nApprove and choose deploy option: ${env.BUILD_URL}input")
+
+          def approval = timeout(time: params.APPROVAL_TIMEOUT_MINUTES as Integer, unit: 'MINUTES') {
+            input(
+              id: 'PipelineApproval',
+              message: "Run ${env.JOB_NAME} #${env.BUILD_NUMBER}?",
+              ok: 'Run pipeline',
+              submitterParameter: 'APPROVED_BY',
+              parameters: [
+                booleanParam(name: 'DEPLOY', defaultValue: params.DEPLOY, description: 'Deploy built frontend assets to S3 and invalidate CloudFront.')
+              ]
+            )
+          }
+
+          env.APPROVED_BY = approval.APPROVED_BY ?: 'unknown'
+          env.DEPLOY_EFFECTIVE = approval.DEPLOY.toString()
+          notifySlack("Pipeline approved by *${env.APPROVED_BY}*.\nDEPLOY=${env.DEPLOY_EFFECTIVE}\nBuild: ${env.BUILD_URL}")
+        }
       }
     }
 
@@ -66,8 +114,8 @@ spec:
     stage('Deploy to S3') {
       when {
         allOf {
-          expression { return env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main' }
-          expression { return params.DEPLOY }
+          expression { return env.IS_MAIN_BUILD == 'true' }
+          expression { return env.DEPLOY_EFFECTIVE == 'true' }
         }
       }
       steps {
@@ -86,6 +134,32 @@ spec:
           '''
         }
       }
+    }
+  }
+
+  post {
+    success {
+      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER} succeeded.\nDEPLOY=${env.DEPLOY_EFFECTIVE ?: 'false'}\nBuild: ${env.BUILD_URL}")
+    }
+    failure {
+      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER} failed.\nBuild: ${env.BUILD_URL}")
+    }
+    aborted {
+      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER} was aborted or timed out before approval.\nBuild: ${env.BUILD_URL}")
+    }
+  }
+}
+
+void notifySlack(String message) {
+  if (!env.SLACK_WEBHOOK_CREDENTIALS_ID?.trim()) {
+    echo 'Slack webhook credential id is empty; skipping Slack notification.'
+    return
+  }
+
+  writeFile file: '.slack-payload.json', text: JsonOutput.toJson([text: message])
+  container('curl') {
+    withCredentials([string(credentialsId: env.SLACK_WEBHOOK_CREDENTIALS_ID, variable: 'SLACK_WEBHOOK_URL')]) {
+      sh(label: 'Notify Slack', script: 'curl -fsS -X POST -H "Content-Type: application/json" --data @.slack-payload.json "$SLACK_WEBHOOK_URL" >/dev/null')
     }
   }
 }
