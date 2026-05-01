@@ -474,7 +474,8 @@ const sendMessage = (isSuperChat = false) => {
   socketClient.emit('TALK', {
     roomId: activeRoomId(),
     sender: chatUsername.value,
-    message: messageContent
+    message: messageContent,
+    isSuperChat
   })
 
   chatInput.value = ''
