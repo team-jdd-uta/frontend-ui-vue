@@ -146,7 +146,6 @@ spec:
 
   post {
     success {
-<<<<<<< HEAD
       notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER}이 성공했습니다.\n배포: ${env.DEPLOY_EFFECTIVE ?: 'false'}\n빌드 링크: ${env.BUILD_URL}")
     }
     failure {
@@ -154,15 +153,6 @@ spec:
     }
     aborted {
       notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER}이 승인 전 취소되었거나 대기 시간이 초과되었습니다.\n빌드 링크: ${env.BUILD_URL}")
-=======
-      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER} succeeded.\nDEPLOY=${env.DEPLOY_EFFECTIVE ?: 'false'}\nBuild: ${env.BUILD_URL}")
-    }
-    failure {
-      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER} failed.\nBuild: ${env.BUILD_URL}")
-    }
-    aborted {
-      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER} was aborted or timed out before approval.\nBuild: ${env.BUILD_URL}")
->>>>>>> 6e409ca (feat: add slack approval gate to jenkins pipeline (#33))
     }
   }
 }
@@ -176,11 +166,7 @@ void notifySlack(String message) {
   writeFile file: '.slack-payload.json', text: JsonOutput.toJson([text: message])
   container('curl') {
     withCredentials([string(credentialsId: env.SLACK_WEBHOOK_CREDENTIALS_ID, variable: 'SLACK_WEBHOOK_URL')]) {
-<<<<<<< HEAD
       sh(label: 'Notify Slack', script: 'curl --max-time 10 --retry 1 -fsS -X POST -H "Content-Type: application/json" --data @.slack-payload.json "$SLACK_WEBHOOK_URL" >/dev/null || echo "Slack 알림 전송에 실패했지만 파이프라인은 계속 진행합니다."')
-=======
-      sh(label: 'Notify Slack', script: 'curl -fsS -X POST -H "Content-Type: application/json" --data @.slack-payload.json "$SLACK_WEBHOOK_URL" >/dev/null')
->>>>>>> 6e409ca (feat: add slack approval gate to jenkins pipeline (#33))
     }
   }
 }
