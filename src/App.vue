@@ -24,7 +24,8 @@ const showMyPage = ref(false)
 const showProfileEditPage = ref(false)
 const defaultCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
 const categories = ref(['전체', ...defaultCategories])
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || import.meta.env.VITE_API_BASE_URL || '/api/room').replace(/\/$/, '')
+const authBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || '').replace(/\/$/, '')
 const HOME_PATH = '/'
 const MY_PAGE_PATH = '/mypage'
 
@@ -160,11 +161,18 @@ const trendingItems = computed(() => {
 })
 
 const filteredStreams = computed(() => {
-  if (selectedCategory.value === '전체') {
-    return liveStreams.value
-  } else {
-    return liveStreams.value.filter(stream => stream.category === selectedCategory.value)
+  let results = selectedCategory.value === '전체'
+    ? liveStreams.value
+    : liveStreams.value.filter(stream => stream.category === selectedCategory.value)
+
+  if (searchValue.value.trim()) {
+    const q = searchValue.value.trim().toLowerCase()
+    results = results.filter(s =>
+      s.title.toLowerCase().includes(q) ||
+      s.streamer.toLowerCase().includes(q)
+    )
   }
+  return results
 })
 
 const filterByCategory = (category) => {
@@ -297,8 +305,8 @@ const handleLogout = async () => {
   const userId = localStorage.getItem('userId') || currentUser.value?.userId
   isLoggingOut.value = true
   try {
-    if (userId) {
-      const response = await fetch(`${apiBaseUrl}/logout/${encodeURIComponent(userId)}`, {
+    if (authBaseUrl && userId) {
+      const response = await fetch(`${authBaseUrl}/logout/${encodeURIComponent(userId)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -353,32 +361,40 @@ const handleStreamCreated = async () => {
   await loadStreamsFromChatRooms()
 }
 
-const mapRoomsToStreams = (rooms) => {
-  return rooms.map((room, index) => ({
-    id: room.roomId,
-    roomId: room.roomId,
-    title: `${room.name} 라이브`,
-    streamer: room.name || `Room ${index + 1}`,
-    streamer_id: room.roomId,
-    category: '토크',
-    viewers: 100 + ((index + 1) * 37),
-    thumbnail: roomThumbnails[index % roomThumbnails.length],
-    isLive: true,
-    tags: ['LIVE', '채팅']
-  }))
+const mapRoomsToStreams = (rooms, countMap = {}) => {
+  return rooms
+    .filter((room) => !room?.status || room.status === 'LIVE')
+    .map((room, index) => ({
+      id: room.roomId,
+      roomId: room.roomId,
+      title: `${room.name} 라이브`,
+      streamer: room.broadcasterId || room.name || `Room ${index + 1}`,
+      streamer_id: room.broadcasterId || room.roomId,
+      category: '토크',
+      viewers: countMap[room.roomId] ?? 0,
+      thumbnail: roomThumbnails[index % roomThumbnails.length],
+      isLive: true,
+      status: room.status,
+      tags: ['LIVE', '채팅', room.status]
+    }))
 }
 
 const loadStreamsFromChatRooms = async () => {
   try {
-    const response = await fetch(`${apiBaseUrl}/chat/rooms`)
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+    const [roomsRes, countsRes] = await Promise.all([
+      fetch(`${roomServiceBaseUrl}/rooms`),
+      fetch(`${roomServiceBaseUrl}/rooms/counts`),
+    ])
+    if (!roomsRes.ok) throw new Error(`HTTP ${roomsRes.status}`)
+    const rooms = await roomsRes.json()
+    if (!Array.isArray(rooms)) throw new Error('Invalid rooms payload')
+
+    let countMap = {}
+    if (countsRes.ok) {
+      const counts = await countsRes.json()
+      countMap = Object.fromEntries(counts.map(c => [c.roomId, c.participants]))
     }
-    const rooms = await response.json()
-    if (!Array.isArray(rooms)) {
-      throw new Error('Invalid rooms payload')
-    }
-    liveStreams.value = mapRoomsToStreams(rooms)
+    liveStreams.value = mapRoomsToStreams(rooms, countMap)
   } catch (error) {
     console.error('Error fetching chat rooms from server:', error)
     liveStreams.value = [...fallbackStreams]
@@ -388,7 +404,7 @@ const loadStreamsFromChatRooms = async () => {
 // 서버 카테고리 로드
 const loadCategories = async () => {
   try {
-    const response = await fetch(`${apiBaseUrl}/categories`)
+    const response = await fetch(`${roomServiceBaseUrl}/rooms/categories`)
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
@@ -498,6 +514,7 @@ onUnmounted(() => {
             :streamer="selectedStream.streamer"
             :streamer_id="selectedStream.streamer_id"
             :room-id="selectedStream.roomId || selectedStream.id"
+            :stream-key="selectedStream.streamKey || selectedStream.roomId || selectedStream.id"
             :title="selectedStream.title"
             :thumbnail="selectedStream.thumbnail"
             :viewers="selectedStream.viewers"

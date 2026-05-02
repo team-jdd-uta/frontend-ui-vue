@@ -74,6 +74,34 @@ export default defineConfig(({ command, mode }) => {
         '/api/summaries': proxyOptions(summaryServiceTarget),
         '/api/rooms': proxyOptions(summaryServiceTarget),
         '/socket.io': proxyOptions(socketTarget, {
+        '/api/user': {
+          target: proxyTarget,
+          changeOrigin: true,
+          secure: isHttpsTarget,
+          headers: {
+            'ngrok-skip-browser-warning': '1',
+          },
+        },
+        '/api/room': {
+          target: proxyTarget,
+          changeOrigin: true,
+          secure: isHttpsTarget,
+          headers: {
+            'ngrok-skip-browser-warning': '1',
+          },
+        },
+        '/api/chat': {
+          target: proxyTarget,
+          changeOrigin: true,
+          secure: isHttpsTarget,
+          headers: {
+            'ngrok-skip-browser-warning': '1',
+          },
+        },
+        '/api/socket': {
+          target: proxyTarget,
+          changeOrigin: true,
+          secure: isHttpsTarget,
           ws: true,
         }),
       },

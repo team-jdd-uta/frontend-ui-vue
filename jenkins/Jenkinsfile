@@ -1,3 +1,5 @@
+import groovy.json.JsonOutput
+
 pipeline {
   agent {
     kubernetes {
@@ -20,6 +22,14 @@ spec:
       env:
         - name: AWS_STS_REGIONAL_ENDPOINTS
           value: regional
+    - name: curl
+      image: curlimages/curl:8.11.1
+      command:
+        - cat
+      tty: true
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
 """
     }
   }
@@ -32,6 +42,7 @@ spec:
 
   parameters {
     booleanParam(name: 'DEPLOY', defaultValue: false, description: 'main 브랜치에서 S3/CloudFront 배포를 실행합니다.')
+    string(name: 'APPROVAL_TIMEOUT_MINUTES', defaultValue: '30', description: 'main 브랜치 webhook 빌드가 승인 입력을 기다릴 시간(분)')
   }
 
   environment {
@@ -41,7 +52,13 @@ spec:
     FRONTEND_BUCKET = 'team9-mini-dev-frontend'
     CLOUDFRONT_DISTRIBUTION_ID = 'E3L4QIQPRHYJLA'
     VITE_LOGIN_SERVER_URL = 'https://login.team9.cloud.skala-ai.com'
-    VITE_USER_INFO_SERVER_URL = 'https://backend.team9.cloud.skala-ai.com'
+    JENKINS_PUBLIC_URL = 'http://jenkins.team9.cloud.skala-ai.com'
+    SLACK_WEBHOOK_CREDENTIALS_ID = 'jenkins-slack-webhook'
+    VITE_USER_INFO_SERVER_URL = 'https://backend.team9.cloud.skala-ai.com/api/user'
+    VITE_ROOM_SERVICE_URL = 'https://backend.team9.cloud.skala-ai.com/api/room'
+    VITE_CHAT_HISTORY_SERVER_URL = 'https://backend.team9.cloud.skala-ai.com/api/chat-history'
+    VITE_SOCKET_BASE_URL = 'https://backend.team9.cloud.skala-ai.com'
+    VITE_SOCKET_PATH = '/api/socket'
     VITE_API_BASE_URL = '/api'
   }
 
@@ -49,6 +66,44 @@ spec:
     stage('Checkout') {
       steps {
         checkout scm
+      }
+    }
+
+
+    stage('Prepare') {
+      steps {
+        script {
+          env.IS_MAIN_BUILD = ((env.BRANCH_NAME == 'main') || (env.GIT_BRANCH == 'origin/main') || (env.GIT_BRANCH == 'main')).toString()
+          env.DEPLOY_EFFECTIVE = params.DEPLOY.toString()
+          echo "Main build: ${env.IS_MAIN_BUILD}"
+        }
+      }
+    }
+
+    stage('Approval') {
+      when {
+        expression { return env.IS_MAIN_BUILD == 'true' }
+      }
+      steps {
+        script {
+          notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER}에서 코드 변경이 감지되었습니다.\n브랜치: ${env.BRANCH_NAME ?: env.GIT_BRANCH}\n커밋: ${env.GIT_COMMIT}\n배포 여부 선택: ${env.BUILD_URL}input")
+
+          def approval = timeout(time: params.APPROVAL_TIMEOUT_MINUTES as Integer, unit: 'MINUTES') {
+            input(
+              id: 'PipelineApproval',
+              message: "${env.JOB_NAME} #${env.BUILD_NUMBER}을 실행할까요?",
+              ok: '파이프라인 실행',
+              submitterParameter: 'APPROVED_BY',
+              parameters: [
+                booleanParam(name: 'DEPLOY', defaultValue: params.DEPLOY, description: '빌드된 프론트엔드 파일을 S3에 배포하고 CloudFront 캐시를 무효화합니다.')
+              ]
+            )
+          }
+
+          env.APPROVED_BY = approval.APPROVED_BY ?: 'unknown'
+          env.DEPLOY_EFFECTIVE = approval.DEPLOY.toString()
+          notifySlack("*${env.APPROVED_BY}* 님이 파이프라인 실행을 승인했습니다.\n배포: ${env.DEPLOY_EFFECTIVE}\n빌드 링크: ${env.BUILD_URL}")
+        }
       }
     }
 
@@ -66,8 +121,8 @@ spec:
     stage('Deploy to S3') {
       when {
         allOf {
-          expression { return env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main' }
-          expression { return params.DEPLOY }
+          expression { return env.IS_MAIN_BUILD == 'true' }
+          expression { return env.DEPLOY_EFFECTIVE == 'true' }
         }
       }
       steps {
@@ -86,6 +141,46 @@ spec:
           '''
         }
       }
+    }
+  }
+
+  post {
+    success {
+<<<<<<< HEAD
+      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER}이 성공했습니다.\n배포: ${env.DEPLOY_EFFECTIVE ?: 'false'}\n빌드 링크: ${env.BUILD_URL}")
+    }
+    failure {
+      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER}이 실패했습니다.\n빌드 링크: ${env.BUILD_URL}")
+    }
+    aborted {
+      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER}이 승인 전 취소되었거나 대기 시간이 초과되었습니다.\n빌드 링크: ${env.BUILD_URL}")
+=======
+      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER} succeeded.\nDEPLOY=${env.DEPLOY_EFFECTIVE ?: 'false'}\nBuild: ${env.BUILD_URL}")
+    }
+    failure {
+      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER} failed.\nBuild: ${env.BUILD_URL}")
+    }
+    aborted {
+      notifySlack("*${env.JOB_NAME}* #${env.BUILD_NUMBER} was aborted or timed out before approval.\nBuild: ${env.BUILD_URL}")
+>>>>>>> 6e409ca (feat: add slack approval gate to jenkins pipeline (#33))
+    }
+  }
+}
+
+void notifySlack(String message) {
+  if (!env.SLACK_WEBHOOK_CREDENTIALS_ID?.trim()) {
+    echo 'Slack webhook credential id is empty; skipping Slack notification.'
+    return
+  }
+
+  writeFile file: '.slack-payload.json', text: JsonOutput.toJson([text: message])
+  container('curl') {
+    withCredentials([string(credentialsId: env.SLACK_WEBHOOK_CREDENTIALS_ID, variable: 'SLACK_WEBHOOK_URL')]) {
+<<<<<<< HEAD
+      sh(label: 'Notify Slack', script: 'curl --max-time 10 --retry 1 -fsS -X POST -H "Content-Type: application/json" --data @.slack-payload.json "$SLACK_WEBHOOK_URL" >/dev/null || echo "Slack 알림 전송에 실패했지만 파이프라인은 계속 진행합니다."')
+=======
+      sh(label: 'Notify Slack', script: 'curl -fsS -X POST -H "Content-Type: application/json" --data @.slack-payload.json "$SLACK_WEBHOOK_URL" >/dev/null')
+>>>>>>> 6e409ca (feat: add slack approval gate to jenkins pipeline (#33))
     }
   }
 }
