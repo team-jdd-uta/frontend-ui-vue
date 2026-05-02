@@ -24,9 +24,9 @@ const lastBroadcastProvisioning = ref(null)
 const activeTab = ref('streams')
 const isCreatingBroadcast = ref(false)
 
-const apiBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || '/api').replace(/\/$/, '')
-const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || '/api/user').replace(/\/$/, '')
-const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || import.meta.env.VITE_API_BASE_URL || '/api/room').replace(/\/$/, '')
+const backendBaseUrl = 'https://backend.team9.cloud.skala-ai.com'
+const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || `${backendBaseUrl}/api/user`).replace(/\/$/, '')
+const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || `${backendBaseUrl}/api/room`).replace(/\/$/, '')
 const userId = localStorage.getItem('userId')
 
 const copyText = async (value) => {
@@ -189,7 +189,8 @@ const createBroadcast = async () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
-      }
+      },
+      body: JSON.stringify(payload)
     })
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
