@@ -11,7 +11,7 @@ const userId = ref('')
 const password = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
-const apiBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || '/api').replace(/\/$/, '')
+const apiBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const handleClose = () => {
@@ -45,6 +45,11 @@ const handleLogin = async () => {
   errorMessage.value = ''
 
   try {
+    if (!apiBaseUrl) {
+      errorMessage.value = '로그인 서버가 설정되지 않았습니다. Cognito 연동이 필요합니다.'
+      return
+    }
+
     const response = await fetch(`${apiBaseUrl}/login`, {
       method: 'POST',
       headers: {

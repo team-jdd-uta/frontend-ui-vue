@@ -1,6 +1,6 @@
 <script setup>
 import Hls from 'hls.js'
-import { defineProps, defineEmits, ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { defineProps, defineEmits, ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { io } from 'socket.io-client'
 
 const props = defineProps({
@@ -8,6 +8,7 @@ const props = defineProps({
   streamer: String,
   streamer_id: String,
   roomId: [String, Number],
+  streamKey: [String, Number],
   title: String,
   thumbnail: String,
   viewers: Number
@@ -18,11 +19,23 @@ const emit = defineEmits(['close'])
 const messages = ref([])
 const chatInput = ref('')
 const chatMessagesContainer = ref(null)
+const chatHistoryContainer = ref(null)
 const isFollowing = ref(false)
+const chatHistoryVisible = ref(false)
+const chatHistoryLoading = ref(false)
+const chatHistoryLoadingMore = ref(false)
+const chatHistoryHasMore = ref(false)
+const chatHistoryItems = ref([])
+const chatHistoryCursor = ref(null)
+const chatHistoryError = ref('')
+const selectedChatTarget = ref(null)
+const chatHistoryRequestSeq = ref(0)
 
 const isChatConnected = ref(false)
 const chatUsername = ref(localStorage.getItem('username') || localStorage.getItem('userId') || 'guest')
 const activeRoomId = () => String(props.roomId ?? '').trim()
+const currentUserId = computed(() => String(localStorage.getItem('userId') || '').trim())
+const isBroadcaster = computed(() => String(props.streamer_id ?? '').trim() === currentUserId.value)
 
 const reconnectBaseDelayMs = 1000
 const reconnectMaxDelayMs = 10000
@@ -36,10 +49,13 @@ let reconnectAttempt = 0
 let reconnectStartedAtMs = null
 let userInitiatedDisconnect = false
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || '/api/user').replace(/\/$/, '')
+const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || import.meta.env.VITE_API_BASE_URL || '/api/room').replace(/\/$/, '')
+const chatHistoryBaseUrl = (import.meta.env.VITE_CHAT_HISTORY_SERVER_URL || '/api/chat-history').replace(/\/$/, '')
 const socketBaseUrl = (import.meta.env.VITE_SOCKET_BASE_URL || window.location.origin).replace(/\/$/, '')
+const socketPath = (import.meta.env.VITE_SOCKET_PATH || '/api/socket').replace(/\/$/, '')
 
-// HLS player config - use roomId as stream key
+// HLS player config - use streamKey if present, otherwise roomId
 const hlsBaseUrl = (import.meta.env.VITE_HLS_BASE_URL || 'http://localhost:8088').replace(/\/$/, '')
 const videoRef = ref(null)
 const status = ref('플레이리스트를 불러오는 중입니다...')
@@ -80,9 +96,9 @@ function scheduleReload(message) {
 }
 
 function buildPlaylistUrl() {
-  const roomId = String(props.roomId ?? '').trim()
-  if (!roomId) return ''
-  return `${hlsBaseUrl}/hls/${encodeURIComponent(roomId)}/index.m3u8`
+  const streamKey = String(props.streamKey ?? props.roomId ?? '').trim()
+  if (!streamKey) return ''
+  return `${hlsBaseUrl}/hls/${encodeURIComponent(streamKey)}/index.m3u8`
 }
 
 function loadStream() {
@@ -187,6 +203,7 @@ function loadStream() {
 
 watch(() => props.roomId, () => {
   // reload stream when room changes
+  closeChatHistoryPanel()
   loadStream()
 })
 
@@ -199,7 +216,7 @@ const followingThisUser = async () => {
   }
 
   try {
-    const response = await fetch(`${apiBaseUrl}/users/${myUserId}/follow`, {
+    const response = await fetch(`${userServiceBaseUrl}/users/${myUserId}/follow`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -220,6 +237,195 @@ const postWatchHistory = () => {
   // 조회 API가 추가되면 서버 계약에 맞춰 다시 연결한다.
 }
 
+const formatChatHistoryTime = (value) => {
+  if (!value) {
+    return ''
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return String(value)
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date)
+}
+
+const resetChatHistoryState = () => {
+  chatHistoryVisible.value = false
+  chatHistoryLoading.value = false
+  chatHistoryLoadingMore.value = false
+  chatHistoryHasMore.value = false
+  chatHistoryItems.value = []
+  chatHistoryCursor.value = null
+  chatHistoryError.value = ''
+}
+
+const scrollChatHistoryToBottom = () => {
+  nextTick(() => {
+    if (chatHistoryContainer.value) {
+      chatHistoryContainer.value.scrollTop = chatHistoryContainer.value.scrollHeight
+    }
+  })
+}
+
+const loadChatHistoryPage = async ({ prepend = false, cursor = null } = {}) => {
+  if (!isBroadcaster.value) {
+    return
+  }
+
+  const ownerUserId = String(props.streamer_id ?? '').trim()
+  const targetUserId = String(selectedChatTarget.value?.userId || '').trim()
+  if (!ownerUserId || !targetUserId) {
+    return
+  }
+
+  const requestSeq = ++chatHistoryRequestSeq.value
+  const pageSize = 50
+  const loadingRef = prepend ? chatHistoryLoadingMore : chatHistoryLoading
+  loadingRef.value = true
+  chatHistoryError.value = ''
+
+  const container = chatHistoryContainer.value
+  const previousScrollHeight = container?.scrollHeight || 0
+  const previousScrollTop = container?.scrollTop || 0
+
+  try {
+    const params = new URLSearchParams()
+    params.set('limit', String(pageSize))
+    if (cursor) {
+      params.set('before', cursor)
+    }
+
+    const response = await fetch(
+      `${chatHistoryBaseUrl}/owners/${encodeURIComponent(ownerUserId)}/users/${encodeURIComponent(targetUserId)}?${params.toString()}`
+    )
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const data = await response.json()
+    if (requestSeq !== chatHistoryRequestSeq.value) {
+      return
+    }
+
+    const items = Array.isArray(data?.items) ? data.items : []
+    const normalized = items.map((item) => ({
+      id: `${item.id}-${item.sourceStreamId || item.createdAt || Math.random()}`,
+      roomId: item.roomId || '',
+      roomName: item.roomName || '',
+      senderUserId: item.senderUserId || item.targetUserId || '',
+      senderDisplayName: item.senderDisplayName || item.senderUserId || item.targetUserId || '',
+      message: item.message || '',
+      createdAt: item.createdAt || '',
+    }))
+
+    if (prepend) {
+      chatHistoryItems.value = [...normalized, ...chatHistoryItems.value]
+    } else {
+      chatHistoryItems.value = normalized
+    }
+
+    chatHistoryHasMore.value = Boolean(data?.hasMore)
+    chatHistoryCursor.value = data?.nextCursor || null
+    chatHistoryVisible.value = true
+
+    await nextTick()
+
+    if (prepend && container) {
+      const nextScrollHeight = container.scrollHeight || 0
+      container.scrollTop = nextScrollHeight - previousScrollHeight + previousScrollTop
+    } else {
+      scrollChatHistoryToBottom()
+    }
+  } catch (error) {
+    console.error('채팅 기록 조회 오류:', error)
+    if (requestSeq === chatHistoryRequestSeq.value) {
+      chatHistoryError.value = '채팅 기록을 불러오지 못했습니다.'
+    }
+  } finally {
+    if (requestSeq === chatHistoryRequestSeq.value) {
+      loadingRef.value = false
+    }
+  }
+}
+
+const openChatHistoryPanel = (message) => {
+  if (!isBroadcaster.value || !message || message.isSystem) {
+    return
+  }
+
+  const senderUserId = String(message.senderUserId || message.userId || message.user || '').trim()
+  if (!senderUserId) {
+    return
+  }
+
+  const senderDisplayName = String(message.senderDisplayName || message.user || senderUserId).trim()
+  if (
+    selectedChatTarget.value &&
+    selectedChatTarget.value.userId === senderUserId &&
+    selectedChatTarget.value.displayName === senderDisplayName
+  ) {
+    return
+  }
+
+  chatHistoryRequestSeq.value += 1
+  selectedChatTarget.value = {
+    userId: senderUserId,
+    displayName: senderDisplayName || senderUserId
+  }
+  chatHistoryItems.value = []
+  chatHistoryCursor.value = null
+  chatHistoryHasMore.value = false
+  chatHistoryError.value = ''
+  chatHistoryVisible.value = false
+}
+
+const handleChatHistoryScroll = async () => {
+  if (!chatHistoryVisible.value || !chatHistoryHasMore.value || chatHistoryLoadingMore.value) {
+    return
+  }
+
+  const container = chatHistoryContainer.value
+  if (!container || container.scrollTop > 24 || !chatHistoryCursor.value) {
+    return
+  }
+
+  await loadChatHistoryPage({
+    prepend: true,
+    cursor: chatHistoryCursor.value
+  })
+}
+
+const showChatHistory = () => {
+  if (!selectedChatTarget.value) {
+    return
+  }
+  if (!chatHistoryVisible.value) {
+    chatHistoryVisible.value = true
+  }
+  if (chatHistoryItems.value.length === 0 && !chatHistoryLoading.value) {
+    loadChatHistoryPage({ prepend: false })
+  }
+}
+
+const closeChatHistoryPanel = () => {
+  chatHistoryRequestSeq.value += 1
+  selectedChatTarget.value = null
+  chatHistoryVisible.value = false
+  chatHistoryItems.value = []
+  chatHistoryCursor.value = null
+  chatHistoryHasMore.value = false
+  chatHistoryError.value = ''
+  chatHistoryLoading.value = false
+  chatHistoryLoadingMore.value = false
+}
+
 const scrollToBottom = () => {
   nextTick(() => {
     if (chatMessagesContainer.value) {
@@ -238,12 +444,43 @@ const resetReconnectState = () => {
   }
 }
 
-const fetchFromApi = async (path, options = {}) => {
-  const response = await fetch(`${apiBaseUrl}${path}`, options)
+const getViewerUserId = () => {
+  return String(localStorage.getItem('userId') || chatUsername.value || '').trim()
+}
+
+const fetchJoinToken = async (roomId, userId) => {
+  const response = await fetch(
+    `${roomServiceBaseUrl}/rooms/${encodeURIComponent(roomId)}/join-token?userId=${encodeURIComponent(userId)}`,
+    { method: 'POST' }
+  )
+
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
   }
-  return response
+
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    const data = await response.json()
+    const token = String(data?.joinToken ?? data?.token ?? data?.value ?? '').trim()
+    if (token) {
+      return token
+    }
+  } else {
+    const text = String(await response.text()).trim()
+    if (text) {
+      try {
+        const parsed = JSON.parse(text)
+        const token = String(parsed?.joinToken ?? parsed?.token ?? parsed?.value ?? '').trim()
+        if (token) {
+          return token
+        }
+      } catch (error) {
+        return text
+      }
+    }
+  }
+
+  throw new Error('join token is empty')
 }
 
 const appendSingleChatMessage = (payload) => {
@@ -274,8 +511,10 @@ const appendSingleChatMessage = (payload) => {
   messages.value.push({
     id: Date.now() + Math.random(),
     user: sender || 'SYSTEM',
+    senderUserId: payload.senderUserId || payload.userId || '',
+    senderDisplayName: sender || payload.senderDisplayName || '',
     text,
-    isMine: !isSystem && sender === chatUsername.value,
+    isMine: !isSystem && String(payload.senderUserId || payload.userId || '') === getViewerUserId(),
     isSystem,
     isSuperChat: payload.isSuperChat === true
   })
@@ -370,10 +609,22 @@ const connectChat = async (isReconnect = false) => {
     return
   }
 
+  const viewerUserId = getViewerUserId()
+  if (!viewerUserId) {
+    console.error('사용자 ID가 없습니다. localStorage userId를 확인하세요.')
+    return
+  }
+
+  let joinToken = ''
   try {
-    await fetchFromApi(`/chat/rooms/${encodeURIComponent(roomId)}`)
+    joinToken = await fetchJoinToken(roomId, viewerUserId)
   } catch (error) {
-    console.warn('채팅방 확인 실패, 소켓 연결은 계속 시도합니다:', error)
+    console.error('join token 발급 실패:', error)
+    isChatConnected.value = false
+    if (!userInitiatedDisconnect) {
+      scheduleReconnect('join token error')
+    }
+    return
   }
 
   userInitiatedDisconnect = false
@@ -383,7 +634,7 @@ const connectChat = async (isReconnect = false) => {
   }
 
   const client = io(socketBaseUrl, {
-    path: '/socket.io',
+    path: socketPath,
     autoConnect: false,
     reconnection: false,
     transports: ['websocket', 'polling']
@@ -393,7 +644,12 @@ const connectChat = async (isReconnect = false) => {
     socketClient = client
     resetReconnectState()
 
-    client.emit('ENTER', { roomId, sender: chatUsername.value })
+    client.emit('ENTER', {
+      roomId,
+      sender: chatUsername.value,
+      userId: viewerUserId,
+      joinToken,
+    })
   })
 
   client.on('ENTER_ACK', () => {
@@ -474,6 +730,7 @@ const sendMessage = (isSuperChat = false) => {
   socketClient.emit('TALK', {
     roomId: activeRoomId(),
     sender: chatUsername.value,
+    userId: getViewerUserId(),
     message: messageContent,
     isSuperChat
   })
@@ -585,6 +842,50 @@ onUnmounted(() => {
             <span class="chat-count">{{ messages.length }}개의 메시지</span>
           </div>
 
+          <div v-if="selectedChatTarget" class="chat-history-panel">
+            <div class="chat-history-panel-header">
+              <div>
+                <div class="chat-history-panel-kicker">방송 주인 전용</div>
+                <h4 class="chat-history-panel-title">{{ selectedChatTarget.displayName }}</h4>
+                <p class="chat-history-panel-meta">{{ selectedChatTarget.userId }}</p>
+              </div>
+              <button class="chat-history-close-btn" @click="closeChatHistoryPanel">
+                닫기
+              </button>
+            </div>
+
+            <div v-if="!chatHistoryVisible" class="chat-history-intro">
+              <p>이 사용자가 내 방송들에서 남긴 채팅을 확인할 수 있습니다.</p>
+              <button class="chat-history-open-btn" @click="showChatHistory">채팅 보기</button>
+            </div>
+
+            <div v-else class="chat-history-list" ref="chatHistoryContainer" @scroll="handleChatHistoryScroll">
+              <div v-if="chatHistoryLoading && chatHistoryItems.length === 0" class="chat-history-empty">
+                <p>채팅 기록을 불러오는 중입니다...</p>
+              </div>
+              <div v-else-if="chatHistoryItems.length === 0" class="chat-history-empty">
+                <p>이 사용자의 채팅 기록이 없습니다.</p>
+              </div>
+              <template v-else>
+                <div v-if="chatHistoryLoadingMore" class="chat-history-loading-more">이전 채팅을 불러오는 중...</div>
+                <div
+                  v-for="item in chatHistoryItems"
+                  :key="item.id"
+                  class="chat-history-item"
+                >
+                  <div class="chat-history-item-meta">
+                    <span class="chat-history-room">{{ item.roomName || item.roomId }}</span>
+                    <span class="chat-history-time">{{ formatChatHistoryTime(item.createdAt) }}</span>
+                  </div>
+                  <div class="chat-history-message">{{ item.message }}</div>
+                </div>
+              </template>
+            </div>
+
+            <p v-if="chatHistoryError" class="chat-history-error">{{ chatHistoryError }}</p>
+            <p v-if="chatHistoryVisible && chatHistoryHasMore" class="chat-history-hint">위로 스크롤하면 더 이전 채팅을 불러옵니다.</p>
+          </div>
+
           <div class="chat-messages" ref="chatMessagesContainer">
             <div
               v-for="message in messages"
@@ -598,7 +899,16 @@ onUnmounted(() => {
                 }
               ]"
             >
-              <span class="chat-user">{{ message.isSystem ? '시스템' : message.user }}</span>
+              <button
+                v-if="!message.isSystem"
+                class="chat-user chat-user-button"
+                @click="openChatHistoryPanel(message)"
+                :disabled="!isBroadcaster"
+                :title="isBroadcaster ? '닉네임을 눌러 채팅 기록을 확인합니다.' : '방송자만 채팅 기록을 볼 수 있습니다.'"
+              >
+                {{ message.senderDisplayName || message.user }}
+              </button>
+              <span v-else class="chat-user">{{ message.isSystem ? '시스템' : message.user }}</span>
               <span class="chat-text">{{ message.text }}</span>
             </div>
             <div v-if="messages.length === 0" class="no-messages">
@@ -875,6 +1185,136 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
+.chat-history-panel {
+  margin: 12px 12px 0;
+  padding: 14px;
+  border: 1px solid rgba(0, 255, 163, 0.18);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(0, 255, 163, 0.08), rgba(0, 217, 255, 0.05));
+  display: grid;
+  gap: 12px;
+}
+
+.chat-history-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.chat-history-panel-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  color: #00ffa3;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.chat-history-panel-title {
+  margin: 0;
+  font-size: 15px;
+  color: #efeff1;
+}
+
+.chat-history-panel-meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #b8b8bf;
+  word-break: break-all;
+}
+
+.chat-history-close-btn,
+.chat-history-open-btn {
+  border: 1px solid rgba(0, 255, 163, 0.25);
+  background: rgba(0, 255, 163, 0.12);
+  color: #00ffa3;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chat-history-close-btn:hover,
+.chat-history-open-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(0, 255, 163, 0.2);
+}
+
+.chat-history-intro {
+  display: grid;
+  gap: 10px;
+  color: #c6c6cc;
+  font-size: 13px;
+}
+
+.chat-history-list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+  display: grid;
+  gap: 10px;
+}
+
+.chat-history-empty,
+.chat-history-loading-more {
+  padding: 14px;
+  border-radius: 10px;
+  background-color: rgba(42, 42, 46, 0.35);
+  color: #b8b8bf;
+  font-size: 13px;
+  text-align: center;
+}
+
+.chat-history-item {
+  border-radius: 10px;
+  padding: 12px;
+  background-color: rgba(42, 42, 46, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  display: grid;
+  gap: 8px;
+}
+
+.chat-history-item-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #b8b8bf;
+}
+
+.chat-history-room {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-history-time {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.chat-history-message {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #efeff1;
+  word-break: break-word;
+}
+
+.chat-history-error {
+  margin: 0;
+  color: #ff7b7b;
+  font-size: 12px;
+}
+
+.chat-history-hint {
+  margin: 0;
+  color: #8dd2f0;
+  font-size: 12px;
+}
+
 .chat-messages {
   flex: 1;
   overflow-y: auto;
@@ -917,6 +1357,19 @@ onUnmounted(() => {
   font-weight: 600;
   color: #00ffa3;
   min-width: 70px;
+}
+
+.chat-user-button {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+
+.chat-user-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.9;
 }
 
 .chat-message.my-message .chat-user {

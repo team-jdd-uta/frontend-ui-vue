@@ -20,11 +20,27 @@ const myStreams = ref([])
 const followingList = ref([])
 const watchHistory = ref([])
 const chatList = ref([])
+const lastBroadcastProvisioning = ref(null)
 const activeTab = ref('streams')
 const isCreatingBroadcast = ref(false)
 
-const apiBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL).replace(/\/$/, '')
+const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || '/api/user').replace(/\/$/, '')
+const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || import.meta.env.VITE_API_BASE_URL || '/api/room').replace(/\/$/, '')
 const userId = localStorage.getItem('userId')
+
+const copyText = async (value) => {
+  if (!value) {
+    return false
+  }
+
+  try {
+    await navigator.clipboard.writeText(String(value))
+    return true
+  } catch (error) {
+    console.warn('클립보드 복사 실패:', error)
+    return false
+  }
+}
 
 const getChattingList = async () => {
   if (!userId) {
@@ -34,7 +50,7 @@ const getChattingList = async () => {
   }
 
   try {
-    const response = await fetch(`${apiBaseUrl}/comments/user/${userId}`)
+    const response = await fetch(`${userServiceBaseUrl}/comments/user/${userId}`)
     if (!response.ok) {
       console.error('작성한 댓글 목록 조회 실패:', response.status)
       chatList.value = []
@@ -62,7 +78,7 @@ const getfollowingList = async () => {
   const PAGE = 0
   const SIZE = 20
   try {
-    const response = await fetch(`${apiBaseUrl}/users/${userId}/Ifollowing/${PAGE}/${SIZE}`)
+    const response = await fetch(`${userServiceBaseUrl}/users/${userId}/Ifollowing/${PAGE}/${SIZE}`)
     if (!response.ok) {
       console.error('팔로잉 목록 조회 실패:', response.status)
       followingList.value = []
@@ -96,7 +112,7 @@ const loadUserData = async () => {
 
   try {
     // 사용자 정보 로드
-    const response = await fetch(`${apiBaseUrl}/users/info/${userId}`)
+    const response = await fetch(`${userServiceBaseUrl}/users/info/${userId}`)
     if (response.ok) {
       const data = await response.json()
       userInfo.value = {
@@ -131,6 +147,23 @@ const handleClose = () => {
   emit('close')
 }
 
+const unfollowUser = async (user) => {
+  if (!userId || !user.id) return
+  try {
+    const response = await fetch(`${userServiceBaseUrl}/users/${userId}/follow/${encodeURIComponent(user.id)}`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) {
+      console.error('팔로우 해제 실패:', response.status)
+      return
+    }
+    followingList.value = followingList.value.filter(u => u.id !== user.id)
+    userInfo.value.following = Math.max(0, userInfo.value.following - 1)
+  } catch (error) {
+    console.error('팔로우 해제 오류:', error)
+  }
+}
+
 const createBroadcast = async () => {
   const roomName = window.prompt('생성할 방송(채팅방) 이름을 입력하세요.')
   const trimmedName = roomName?.trim()
@@ -151,7 +184,7 @@ const createBroadcast = async () => {
       userId: userId
     }
 
-    const response = await fetch(`${apiBaseUrl}/chat/rooms`, {
+    const response = await fetch(`${roomServiceBaseUrl}/rooms`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -163,6 +196,7 @@ const createBroadcast = async () => {
     }
 
     const createdRoom = await response.json()
+    lastBroadcastProvisioning.value = createdRoom
     myStreams.value.unshift({
       id: createdRoom?.roomId || Date.now(),
       title: `${createdRoom?.name || trimmedName} 라이브`,
@@ -246,6 +280,49 @@ onMounted(() => {
             </button>
           </div>
 
+          <div v-if="lastBroadcastProvisioning" class="obs-panel">
+            <div class="obs-panel-header">
+              <div>
+                <div class="obs-panel-kicker">OBS 연결 정보</div>
+                <h3 class="obs-panel-title">{{ lastBroadcastProvisioning.name }}</h3>
+              </div>
+              <span class="obs-panel-status">{{ lastBroadcastProvisioning.status }}</span>
+            </div>
+            <div class="obs-grid">
+              <div class="obs-field">
+                <span class="obs-label">RTMP URL</span>
+                <div class="obs-value-row">
+                  <code class="obs-value">{{ lastBroadcastProvisioning.rtmpUrl }}</code>
+                  <button class="obs-copy-btn" @click="copyText(lastBroadcastProvisioning.rtmpUrl)">복사</button>
+                </div>
+              </div>
+              <div class="obs-field">
+                <span class="obs-label">Stream Key</span>
+                <div class="obs-value-row">
+                  <code class="obs-value">{{ lastBroadcastProvisioning.streamKey }}</code>
+                  <button class="obs-copy-btn" @click="copyText(lastBroadcastProvisioning.streamKey)">복사</button>
+                </div>
+              </div>
+              <div class="obs-field">
+                <span class="obs-label">Join Token</span>
+                <div class="obs-value-row">
+                  <code class="obs-value">{{ lastBroadcastProvisioning.joinToken }}</code>
+                  <button class="obs-copy-btn" @click="copyText(lastBroadcastProvisioning.joinToken)">복사</button>
+                </div>
+              </div>
+              <div class="obs-field">
+                <span class="obs-label">Room ID</span>
+                <div class="obs-value-row">
+                  <code class="obs-value">{{ lastBroadcastProvisioning.roomId }}</code>
+                  <button class="obs-copy-btn" @click="copyText(lastBroadcastProvisioning.roomId)">복사</button>
+                </div>
+              </div>
+            </div>
+            <p class="obs-help">
+              OBS에서 RTMP URL과 Stream Key를 넣고 송출을 시작하면, RTMP 콜백이 방 상태를 LIVE로 바꿉니다.
+            </p>
+          </div>
+
           <div v-if="myStreams.length === 0" class="empty-state">
             <p>아직 방송 기록이 없습니다.</p>
           </div>
@@ -260,7 +337,7 @@ onMounted(() => {
                 <span class="meta-item">📅 {{ stream.date }}</span>
               </div>
             </div>
-            <button class="action-btn">상세보기</button>
+            <button class="action-btn" disabled title="방송 이력 기능 준비 중">방송 이력</button>
           </div>
         </div>
 
@@ -277,7 +354,7 @@ onMounted(() => {
                 {{ user.isLive ? '🔴 LIVE' : '오프라인' }}
               </div>
             </div>
-            <button class="unfollow-btn">팔로우 해제</button>
+            <button class="unfollow-btn" @click="unfollowUser(user)">팔로우 해제</button>
           </div>
         </div>
 
@@ -490,6 +567,102 @@ onMounted(() => {
 .stream-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.obs-panel {
+  background: linear-gradient(180deg, rgba(0, 255, 163, 0.08) 0%, rgba(0, 217, 255, 0.08) 100%);
+  border: 1px solid rgba(0, 255, 163, 0.25);
+  border-radius: 14px;
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.obs-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.obs-panel-kicker {
+  font-size: 12px;
+  color: #00ffa3;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.obs-panel-title {
+  margin: 0;
+  font-size: 18px;
+  color: #efeff1;
+}
+
+.obs-panel-status {
+  background-color: rgba(0, 255, 163, 0.16);
+  color: #00ffa3;
+  border: 1px solid rgba(0, 255, 163, 0.35);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.obs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.obs-field {
+  display: grid;
+  gap: 6px;
+}
+
+.obs-label {
+  font-size: 12px;
+  color: #b8b8bf;
+  font-weight: 600;
+}
+
+.obs-value-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.obs-value {
+  flex: 1;
+  min-width: 0;
+  background-color: #0e0e10;
+  border: 1px solid #2a2a2e;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #efeff1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obs-copy-btn {
+  border: 1px solid #00ffa3;
+  background: rgba(0, 255, 163, 0.08);
+  color: #00ffa3;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.obs-help {
+  margin: 0;
+  color: #b8b8bf;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .broadcast-btn {
