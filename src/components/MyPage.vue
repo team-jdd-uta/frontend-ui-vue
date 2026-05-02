@@ -75,6 +75,55 @@ const getChattingList = async () => {
   }
 }
 
+const getMyStreams = async () => {
+  if (!userId) {
+    myStreams.value = []
+    return
+  }
+
+  try {
+    const response = await fetch(`${roomServiceBaseUrl}/rooms`)
+    if (!response.ok) {
+      console.error('내 방송 목록 조회 실패:', response.status)
+      myStreams.value = []
+      return
+    }
+
+    const data = await response.json()
+    const list = Array.isArray(data) ? data : []
+    myStreams.value = list
+      .filter(item => item && String(item.broadcasterId || '').trim() === String(userId).trim())
+      .map(item => ({
+        id: item.roomId,
+        roomId: item.roomId,
+        title: item.name || item.roomId,
+        status: item.status || 'UNKNOWN',
+        viewers: 0,
+        date: item.createdAt ? new Date(item.createdAt).toISOString().slice(0, 10) : ''
+      }))
+  } catch (error) {
+    console.error('내 방송 목록 조회 오류:', error)
+    myStreams.value = []
+  }
+}
+
+const fetchRoomDetails = async (roomId) => {
+  if (!roomId) {
+    return null
+  }
+
+  try {
+    const response = await fetch(`${roomServiceBaseUrl}/rooms/${encodeURIComponent(roomId)}`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    return await response.json()
+  } catch (error) {
+    console.error('방 상세 조회 실패:', error)
+    return null
+  }
+}
+
 const getfollowingList = async () => {
   const PAGE = 0
   const SIZE = 20
@@ -132,16 +181,12 @@ const loadUserData = async () => {
     userInfo.value.username = userId
   }
 
-  // 더미 데이터
-  myStreams.value = [
-    { id: 1, title: '내 방송 1', viewers: 100, date: '2026-02-10' },
-    { id: 2, title: '내 방송 2', viewers: 250, date: '2026-02-11' }
-  ]
-
   watchHistory.value = [
     { id: 1, title: '시청 기록 1', date: '2026-02-09' },
     { id: 2, title: '시청 기록 2', date: '2026-02-08' }
   ]
+
+  await getMyStreams()
 }
 
 const handleClose = () => {
@@ -198,21 +243,61 @@ const createBroadcast = async () => {
 
     const createdRoom = await response.json()
     lastBroadcastProvisioning.value = createdRoom
-    myStreams.value.unshift({
-      id: createdRoom?.roomId || Date.now(),
-      title: `${createdRoom?.name || trimmedName} 라이브`,
-      viewers: 0,
-      date: new Date().toISOString().slice(0, 10)
-    })
-
-    userInfo.value.streams += 1
+    await getMyStreams()
+    userInfo.value.streams = myStreams.value.length
     emit('stream-created', createdRoom)
     alert('방송이 생성되었습니다.')
   } catch (error) {
+    if (String(error?.message || '').includes('HTTP 409')) {
+      await getMyStreams()
+      const existing = myStreams.value[0]
+      if (existing) {
+        alert('이미 생성된 방송이 있습니다. 기존 방송을 확인하세요.')
+        const roomDetails = await fetchRoomDetails(existing.roomId)
+        lastBroadcastProvisioning.value = roomDetails || {
+          roomId: existing.roomId,
+          name: existing.title,
+          status: existing.status,
+          streamKey: null,
+          joinToken: null,
+          rtmpUrl: null
+        }
+        return
+      }
+    }
     console.error('방송 생성 실패:', error)
     alert('방송 생성에 실패했습니다.')
   } finally {
     isCreatingBroadcast.value = false
+  }
+}
+
+const deleteBroadcast = async (stream) => {
+  if (!stream?.roomId) {
+    return
+  }
+
+  const confirmed = window.confirm(`방송 "${stream.title}"을(를) 삭제할까요?`)
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    const response = await fetch(`${roomServiceBaseUrl}/rooms/${encodeURIComponent(stream.roomId)}`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    myStreams.value = myStreams.value.filter(item => item.roomId !== stream.roomId)
+    userInfo.value.streams = myStreams.value.length
+    if (lastBroadcastProvisioning.value?.roomId === stream.roomId) {
+      lastBroadcastProvisioning.value = null
+    }
+  } catch (error) {
+    console.error('방송 삭제 실패:', error)
+    alert('방송 삭제에 실패했습니다.')
   }
 }
 
@@ -339,6 +424,7 @@ onMounted(() => {
               </div>
             </div>
             <button class="action-btn" disabled title="방송 이력 기능 준비 중">방송 이력</button>
+            <button class="delete-btn" @click="deleteBroadcast(stream)">삭제</button>
           </div>
         </div>
 
@@ -749,6 +835,24 @@ onMounted(() => {
 
 .action-btn:hover {
   transform: scale(1.05);
+}
+
+.delete-btn {
+  background: none;
+  border: 1px solid #f70045;
+  color: #f70045;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-left: 8px;
+}
+
+.delete-btn:hover {
+  background-color: rgba(247, 0, 69, 0.1);
+  transform: scale(1.03);
 }
 
 .following-list {
