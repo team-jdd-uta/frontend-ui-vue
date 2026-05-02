@@ -21,6 +21,8 @@ const chatInput = ref('')
 const chatMessagesContainer = ref(null)
 const chatHistoryContainer = ref(null)
 const isFollowing = ref(false)
+const defaultPinnedChatMessage = 'AI 반응 분석 대기 중입니다. 채팅 10개가 쌓이면 최신 분석이 표시됩니다.'
+const pinnedChatMessage = ref(defaultPinnedChatMessage)
 const chatHistoryVisible = ref(false)
 const chatHistoryLoading = ref(false)
 const chatHistoryLoadingMore = ref(false)
@@ -48,11 +50,13 @@ let reconnectScheduled = false
 let reconnectAttempt = 0
 let reconnectStartedAtMs = null
 let userInitiatedDisconnect = false
+let summaryPollTimer = null
 
 const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || '/api/user').replace(/\/$/, '')
 const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || import.meta.env.VITE_API_BASE_URL || '/api/room').replace(/\/$/, '')
 const chatHistoryBaseUrl = (import.meta.env.VITE_CHAT_HISTORY_SERVER_URL || '/api/chat-history').replace(/\/$/, '')
 const socketBaseUrl = (import.meta.env.VITE_SOCKET_BASE_URL || window.location.origin).replace(/\/$/, '')
+const summaryPollIntervalMs = 5000
 const socketPath = (import.meta.env.VITE_SOCKET_PATH || '/api/socket').replace(/\/$/, '')
 
 // HLS player config - use streamKey if present, otherwise roomId
@@ -205,6 +209,8 @@ watch(() => props.roomId, () => {
   // reload stream when room changes
   closeChatHistoryPanel()
   loadStream()
+  pinnedChatMessage.value = defaultPinnedChatMessage
+  startSummaryPolling()
 })
 
 const followingThisUser = async () => {
@@ -483,6 +489,44 @@ const fetchJoinToken = async (roomId, userId) => {
   throw new Error('join token is empty')
 }
 
+const fetchLatestSummary = async () => {
+  const roomId = activeRoomId()
+  if (!roomId) {
+    return
+  }
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/summaries/${encodeURIComponent(roomId)}`)
+    if (response.status === 404) {
+      return
+    }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const data = await response.json()
+    const summary = String(data.summary || '').trim()
+    if (summary) {
+      pinnedChatMessage.value = summary
+    }
+  } catch (error) {
+    console.warn('AI 반응 분석 조회 실패:', error)
+  }
+}
+
+const stopSummaryPolling = () => {
+  if (summaryPollTimer) {
+    window.clearInterval(summaryPollTimer)
+    summaryPollTimer = null
+  }
+}
+
+const startSummaryPolling = () => {
+  stopSummaryPolling()
+  fetchLatestSummary()
+  summaryPollTimer = window.setInterval(fetchLatestSummary, summaryPollIntervalMs)
+}
+
 const appendSingleChatMessage = (payload) => {
   if (!payload) {
     return
@@ -674,6 +718,10 @@ const connectChat = async (isReconnect = false) => {
 
   client.on('error', (error) => {
     console.error('Socket.IO error:', error?.message || error)
+    if (error?.code === 'TALK_FAILED') {
+      alert('채팅 전송에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+      return
+    }
     isChatConnected.value = false
     scheduleReconnect(error?.code || 'socket error')
   })
@@ -762,12 +810,14 @@ const formatViewers = (count) => {
 
 onMounted(() => {
   postWatchHistory()
+  startSummaryPolling()
   connectChat(false)
   // start video player for the current room
   loadStream()
 })
 
 onUnmounted(() => {
+  stopSummaryPolling()
   disconnectChat()
   // clean up HLS player
   destroyPlayer()
@@ -842,6 +892,8 @@ onUnmounted(() => {
             <span class="chat-count">{{ messages.length }}개의 메시지</span>
           </div>
 
+          <div class="chat-pinned-message">
+            {{ pinnedChatMessage }}
           <div v-if="selectedChatTarget" class="chat-history-panel">
             <div class="chat-history-panel-header">
               <div>
@@ -1185,6 +1237,15 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
+.chat-pinned-message {
+  padding: 12px 15px;
+  border-bottom: 1px solid rgba(0, 255, 163, 0.2);
+  background-color: rgba(0, 255, 163, 0.08);
+  color: #efeff1;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  word-break: keep-all;
 .chat-history-panel {
   margin: 12px 12px 0;
   padding: 14px;
