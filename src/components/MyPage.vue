@@ -23,7 +23,7 @@ const chatList = ref([])
 const activeTab = ref('streams')
 const isCreatingBroadcast = ref(false)
 
-const apiBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL).replace(/\/$/, '')
+const apiBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || '/api').replace(/\/$/, '')
 const userId = localStorage.getItem('userId')
 
 const getChattingList = async () => {
@@ -146,17 +146,11 @@ const createBroadcast = async () => {
   isCreatingBroadcast.value = true
 
   try {
-    const payload = {
-      name: trimmedName,
-      userId: userId
-    }
-
-    const response = await fetch(`${apiBaseUrl}/chat/rooms`, {
+    const response = await fetch(`${apiBaseUrl}/chat/rooms?name=${encodeURIComponent(trimmedName)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
+      }
     })
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
