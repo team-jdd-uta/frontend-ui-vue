@@ -10,7 +10,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'saved'])
 
-const apiBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || '/api').replace(/\/$/, '')
+const apiBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || 'https://backend.team9.cloud.skala-ai.com/api/user').replace(/\/$/, '')
 
 const form = reactive({
   userId: '',

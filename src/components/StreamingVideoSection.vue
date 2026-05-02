@@ -52,10 +52,11 @@ let reconnectStartedAtMs = null
 let userInitiatedDisconnect = false
 let summaryPollTimer = null
 
-const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || '/api/user').replace(/\/$/, '')
-const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || import.meta.env.VITE_API_BASE_URL || '/api/room').replace(/\/$/, '')
-const chatHistoryBaseUrl = (import.meta.env.VITE_CHAT_HISTORY_SERVER_URL || '/api/chat-history').replace(/\/$/, '')
-const socketBaseUrl = (import.meta.env.VITE_SOCKET_BASE_URL || window.location.origin).replace(/\/$/, '')
+const backendBaseUrl = 'https://backend.team9.cloud.skala-ai.com'
+const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || `${backendBaseUrl}/api/user`).replace(/\/$/, '')
+const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || `${backendBaseUrl}/api/room`).replace(/\/$/, '')
+const chatHistoryBaseUrl = (import.meta.env.VITE_CHAT_HISTORY_SERVER_URL || `${backendBaseUrl}/api/chat-history`).replace(/\/$/, '')
+const socketBaseUrl = (import.meta.env.VITE_SOCKET_BASE_URL || backendBaseUrl).replace(/\/$/, '')
 const summaryPollIntervalMs = 5000
 const socketPath = (import.meta.env.VITE_SOCKET_PATH || '/api/socket').replace(/\/$/, '')
 
@@ -894,6 +895,7 @@ onUnmounted(() => {
 
           <div class="chat-pinned-message">
             {{ pinnedChatMessage }}
+          </div>
           <div v-if="selectedChatTarget" class="chat-history-panel">
             <div class="chat-history-panel-header">
               <div>
@@ -1246,6 +1248,8 @@ onUnmounted(() => {
   font-weight: 600;
   line-height: 1.5;
   word-break: keep-all;
+}
+
 .chat-history-panel {
   margin: 12px 12px 0;
   padding: 14px;

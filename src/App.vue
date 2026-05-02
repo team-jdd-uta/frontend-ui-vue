@@ -24,8 +24,9 @@ const showMyPage = ref(false)
 const showProfileEditPage = ref(false)
 const defaultCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
 const categories = ref(['전체', ...defaultCategories])
-const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || import.meta.env.VITE_API_BASE_URL || '/api/room').replace(/\/$/, '')
-const authBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || '').replace(/\/$/, '')
+const backendBaseUrl = 'https://backend.team9.cloud.skala-ai.com'
+const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || `${backendBaseUrl}/api/room`).replace(/\/$/, '')
+const authBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || 'https://login.team9.cloud.skala-ai.com').replace(/\/$/, '')
 const HOME_PATH = '/'
 const MY_PAGE_PATH = '/mypage'
 
