@@ -366,19 +366,21 @@ const handleStreamCreated = async () => {
 
 const mapRoomsToStreams = (rooms, countMap = {}) => {
   return rooms
-    .filter((room) => !room?.status || room.status === 'LIVE')
+    .filter((room) => !room?.status || ['READY', 'LIVE', 'STOPPED'].includes(room.status))
     .map((room, index) => ({
       id: room.roomId,
       roomId: room.roomId,
-      title: `${room.name} 라이브`,
+      title: room.status === 'LIVE'
+        ? `${room.name} 라이브`
+        : `${room.name} 준비중`,
       streamer: room.broadcasterId || room.name || `Room ${index + 1}`,
       streamer_id: room.broadcasterId || room.roomId,
       category: '토크',
       viewers: countMap[room.roomId] ?? 0,
       thumbnail: roomThumbnails[index % roomThumbnails.length],
-      isLive: true,
+      isLive: room.status === 'LIVE',
       status: room.status,
-      tags: ['LIVE', '채팅', room.status]
+      tags: [room.status === 'LIVE' ? 'LIVE' : '준비중', '채팅', room.status]
     }))
 }
 
@@ -518,6 +520,7 @@ onUnmounted(() => {
             :streamer_id="selectedStream.streamer_id"
             :room-id="selectedStream.roomId || selectedStream.id"
             :stream-key="selectedStream.streamKey || selectedStream.roomId || selectedStream.id"
+            :room-status="selectedStream.status"
             :title="selectedStream.title"
             :thumbnail="selectedStream.thumbnail"
             :viewers="selectedStream.viewers"

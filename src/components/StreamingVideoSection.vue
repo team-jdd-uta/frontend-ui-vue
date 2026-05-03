@@ -9,6 +9,7 @@ const props = defineProps({
   streamer_id: String,
   roomId: [String, Number],
   streamKey: [String, Number],
+  roomStatus: String,
   title: String,
   thumbnail: String,
   viewers: Number
@@ -46,6 +47,7 @@ const reconnectBaseDelayMs = 1000
 const reconnectMaxDelayMs = 10000
 const reconnectJitterMaxMs = 300
 const reconnectMaxDurationMs = 60000
+const roomStatusPollIntervalMs = 5000
 
 let socketClient = null
 let reconnectTimer = null
@@ -54,6 +56,7 @@ let reconnectAttempt = 0
 let reconnectStartedAtMs = null
 let userInitiatedDisconnect = false
 let summaryPollTimer = null
+let roomStatusPollTimer = null
 
 const backendBaseUrl = 'https://api.team9.cloud.skala-ai.com'
 const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || `${backendBaseUrl}/api/user`).replace(/\/$/, '')
@@ -67,6 +70,20 @@ const socketPath = (import.meta.env.VITE_SOCKET_PATH || '/api/socket').replace(/
 const hlsBaseUrl = (import.meta.env.VITE_HLS_BASE_URL || 'http://localhost:8088').replace(/\/$/, '')
 const videoRef = ref(null)
 const status = ref('플레이리스트를 불러오는 중입니다...')
+const roomSnapshot = ref({
+  status: String(props.roomStatus || '').trim().toUpperCase()
+})
+const normalizedRoomStatus = computed(() => {
+  return String(roomSnapshot.value?.status || props.roomStatus || '').trim().toUpperCase()
+})
+const isRoomEnded = computed(() => normalizedRoomStatus.value === 'ENDED')
+const isRoomPreparing = computed(() => normalizedRoomStatus.value === 'READY' || normalizedRoomStatus.value === 'STOPPED')
+const roomPreparingMessage = computed(() => {
+  if (normalizedRoomStatus.value === 'STOPPED') {
+    return '방송이 잠시 중단되었습니다. 진행자가 송출을 재개하면 영상이 다시 연결됩니다.'
+  }
+  return '방송 준비 중입니다. 진행자가 송출을 시작하면 영상이 연결됩니다.'
+})
 
 let hls = null
 let retryTimer = null
@@ -109,11 +126,55 @@ function buildPlaylistUrl() {
   return `${hlsBaseUrl}/hls/${encodeURIComponent(streamKey)}/index.m3u8`
 }
 
+async function fetchRoomSnapshot() {
+  const roomId = activeRoomId()
+  if (!roomId) {
+    return
+  }
+
+  try {
+    const response = await fetch(`${roomServiceBaseUrl}/rooms/${encodeURIComponent(roomId)}`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const data = await response.json()
+    roomSnapshot.value = {
+      ...(data || {}),
+      status: String(data?.status || '').trim().toUpperCase()
+    }
+  } catch (error) {
+    console.warn('방 상태 조회 실패:', error)
+  }
+}
+
+function stopRoomStatusPolling() {
+  if (roomStatusPollTimer) {
+    window.clearInterval(roomStatusPollTimer)
+    roomStatusPollTimer = null
+  }
+}
+
+function startRoomStatusPolling() {
+  stopRoomStatusPolling()
+  roomStatusPollTimer = window.setInterval(fetchRoomSnapshot, roomStatusPollIntervalMs)
+}
+
 function loadStream() {
   const video = videoRef.value
   if (!video) return
 
   destroyPlayer()
+
+  if (isRoomEnded.value) {
+    status.value = '방송이 종료되었습니다.'
+    return
+  }
+
+  if (isRoomPreparing.value) {
+    status.value = roomPreparingMessage.value
+    return
+  }
 
   const playlistUrl = buildPlaylistUrl()
   if (!playlistUrl) {
@@ -209,12 +270,40 @@ function loadStream() {
   status.value = '이 브라우저는 HLS 재생을 지원하지 않습니다.'
 }
 
-watch(() => props.roomId, () => {
+function syncRoomPlaybackState() {
+  if (isRoomEnded.value) {
+    destroyPlayer()
+    status.value = '방송이 종료되었습니다.'
+    if (isChatConnected.value) {
+      disconnectChat()
+    }
+    return
+  }
+
+  if (isRoomPreparing.value) {
+    destroyPlayer()
+    status.value = roomPreparingMessage.value
+    return
+  }
+
+  loadStream()
+}
+
+watch(normalizedRoomStatus, () => {
+  syncRoomPlaybackState()
+})
+
+watch(() => props.roomId, async () => {
   // reload stream when room changes
   closeChatHistoryPanel()
-  loadStream()
+  roomSnapshot.value = {
+    status: String(props.roomStatus || '').trim().toUpperCase()
+  }
   pinnedChatMessage.value = defaultPinnedChatMessage
   startSummaryPolling()
+  await fetchRoomSnapshot()
+  startRoomStatusPolling()
+  syncRoomPlaybackState()
 })
 
 watch(isBroadcaster, () => {
@@ -731,6 +820,11 @@ const scheduleReconnect = (reason, delayMs) => {
 }
 
 const connectChat = async (isReconnect = false) => {
+  if (isRoomEnded.value) {
+    isChatConnected.value = false
+    return
+  }
+
   if (!chatUsername.value.trim()) {
     console.error('사용자 이름이 없습니다. localStorage username/userId를 확인하세요.')
     return
@@ -903,16 +997,19 @@ const formatViewers = (count) => {
   return count.toString()
 }
 
-onMounted(() => {
+onMounted(async () => {
   postWatchHistory()
   startSummaryPolling()
+  await fetchRoomSnapshot()
+  startRoomStatusPolling()
   connectChat(false)
   // start video player for the current room
-  loadStream()
+  syncRoomPlaybackState()
 })
 
 onUnmounted(() => {
   stopSummaryPolling()
+  stopRoomStatusPolling()
   disconnectChat()
   // clean up HLS player
   destroyPlayer()
@@ -930,10 +1027,30 @@ onUnmounted(() => {
 
     <div class="video-main">
       <div class="video-player-section">
-        <div class="video-player-wrapper">
-          <video ref="videoRef" controls playsinline muted style="width:100%; height:100%;"></video>
+        <div class="video-player-wrapper" :class="{ preparing: isRoomPreparing, ended: isRoomEnded }">
+          <video
+            v-show="!isRoomPreparing && !isRoomEnded"
+            ref="videoRef"
+            controls
+            playsinline
+            muted
+            style="width:100%; height:100%;"
+          ></video>
+          <div v-if="isRoomPreparing || isRoomEnded" class="video-state-overlay">
+            <div class="video-state-badge">
+              {{ isRoomEnded ? '방송 종료' : '방송 준비중' }}
+            </div>
+            <h2 class="video-state-title">
+              {{ isRoomEnded ? '방송이 종료되었습니다.' : '방송 준비 중입니다.' }}
+            </h2>
+            <p class="video-state-description">
+              {{ isRoomEnded
+                ? '방송이 완전히 종료되어 다시 입장할 수 없습니다.'
+                : roomPreparingMessage }}
+            </p>
+          </div>
         </div>
-        <div class="player-status" v-if="status">{{ status }}</div>
+        <div class="player-status" v-if="status && !isRoomPreparing && !isRoomEnded">{{ status }}</div>
 
         <div class="video-info">
           <h1 class="video-title">{{ title }}</h1>
@@ -1176,6 +1293,51 @@ onUnmounted(() => {
   overflow: hidden;
   margin-bottom: 20px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.video-state-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+  background:
+    radial-gradient(circle at top, rgba(124, 58, 237, 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(10, 10, 14, 0.92), rgba(16, 16, 24, 0.98));
+  color: #f4f4f5;
+}
+
+.video-state-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  margin-bottom: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d4d4d8;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.video-state-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.video-state-description {
+  max-width: 420px;
+  margin-top: 12px;
+  color: #a1a1aa;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .video-info {
