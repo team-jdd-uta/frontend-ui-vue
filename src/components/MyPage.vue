@@ -595,20 +595,13 @@ onMounted(() => {
                   <button class="obs-copy-btn" @click="copyText(lastBroadcastProvisioning.rtmpUrl)">복사</button>
                 </div>
               </div>
-              <div class="obs-field">
-                <span class="obs-label">Stream Key</span>
-                <div class="obs-value-row">
-                  <code class="obs-value">{{ lastBroadcastProvisioning.streamKey }}</code>
-                  <button class="obs-copy-btn" @click="copyText(lastBroadcastProvisioning.streamKey)">복사</button>
+                <div class="obs-field">
+                  <span class="obs-label">Stream Key</span>
+                  <div class="obs-value-row">
+                    <code class="obs-value">{{ lastBroadcastProvisioning.streamKey }}</code>
+                    <button class="obs-copy-btn" @click="copyText(lastBroadcastProvisioning.streamKey)">복사</button>
+                  </div>
                 </div>
-              </div>
-              <div class="obs-field">
-                <span class="obs-label">Join Token</span>
-                <div class="obs-value-row">
-                  <code class="obs-value">{{ lastBroadcastProvisioning.joinToken }}</code>
-                  <button class="obs-copy-btn" @click="copyText(lastBroadcastProvisioning.joinToken)">복사</button>
-                </div>
-              </div>
               <div class="obs-field">
                 <span class="obs-label">Room ID</span>
                 <div class="obs-value-row">
@@ -625,7 +618,7 @@ onMounted(() => {
             </div>
             <p class="obs-help">
               OBS에서 RTMP URL과 Stream Key를 넣고 송출을 시작하면, RTMP 콜백이 방 상태를 LIVE로 바꿉니다.
-              현재 stream key는 room id와 동일하게 발급됩니다.
+              현재 stream key는 room id와 동일하게 발급됩니다. 시청자 채팅 입장용 토큰은 방송 주인에게 노출하지 않습니다.
             </p>
 
             <div class="management-editor">
