@@ -234,7 +234,7 @@ const loadUserData = async () => {
       userInfo.value = {
         userId: userId,
         username: data.username || userId,
-        email: data.email || '',
+        email: data.email || localStorage.getItem('email') || '',
         followers: data.followers || 0,
         following: data.following || 0,
         streams: data.streams || 0
@@ -245,6 +245,7 @@ const loadUserData = async () => {
     // 기본값 설정
     userInfo.value.userId = userId
     userInfo.value.username = userId
+    userInfo.value.email = localStorage.getItem('email') || ''
   }
 
   watchHistory.value = [

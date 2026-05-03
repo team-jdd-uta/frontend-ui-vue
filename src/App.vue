@@ -298,6 +298,7 @@ const clearAuthState = () => {
   localStorage.removeItem('refreshToken')
   localStorage.removeItem('tokenExpiresIn')
   localStorage.removeItem('username')
+  localStorage.removeItem('email')
 }
 
 const handleLogout = async () => {

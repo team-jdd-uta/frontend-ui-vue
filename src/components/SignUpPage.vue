@@ -7,7 +7,8 @@ defineProps({
 
 const emit = defineEmits(['close', 'signup-success'])
 
-const userId = ref('')
+const email = ref('')
+const nickname = ref('')
 const password = ref('')
 const confirmPassword = ref('')
 const isLoading = ref(false)
@@ -37,14 +38,15 @@ const handleBackdropClick = (e) => {
 
 const handleSignup = async () => {
   resetMessages()
-  const username = userId.value.trim()
+  const trimmedEmail = email.value.trim()
+  const trimmedNickname = nickname.value.trim()
 
-  if (!username || !password.value) {
-    errorMessage.value = '이메일과 비밀번호를 입력해주세요.'
+  if (!trimmedEmail || !trimmedNickname || !password.value) {
+    errorMessage.value = '이메일, 닉네임, 비밀번호를 모두 입력해주세요.'
     return
   }
 
-  if (!emailPattern.test(username)) {
+  if (!emailPattern.test(trimmedEmail)) {
     errorMessage.value = '이메일 주소 형식으로 가입해주세요.'
     return
   }
@@ -74,7 +76,8 @@ const handleSignup = async () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          username,
+          email: trimmedEmail,
+          nickname: trimmedNickname,
           password: password.value
         })
       }
@@ -118,12 +121,25 @@ const handleKeyPress = (event) => {
 
         <form class="signup-form" @submit.prevent="handleSignup">
           <div class="form-group">
-            <label for="signup-userId" class="form-label">이메일</label>
+            <label for="signup-email" class="form-label">이메일</label>
             <input
-              id="signup-userId"
-              v-model="userId"
+              id="signup-email"
+              v-model="email"
               type="email"
               placeholder="이메일을 입력하세요"
+              class="form-input"
+              :disabled="isLoading"
+              @keypress="handleKeyPress"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="signup-nickname" class="form-label">닉네임</label>
+            <input
+              id="signup-nickname"
+              v-model="nickname"
+              type="text"
+              placeholder="닉네임을 입력하세요"
               class="form-input"
               :disabled="isLoading"
               @keypress="handleKeyPress"

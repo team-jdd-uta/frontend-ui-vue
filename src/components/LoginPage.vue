@@ -69,6 +69,7 @@ const handleLogin = async () => {
         const serverUser = data?.user || {}
         const resolvedUserId = serverUser.id || serverUser.userId || username
         const resolvedUsername = serverUser.username || username
+        const resolvedEmail = serverUser.email || username
 
         console.log('저장할 userId:', resolvedUserId)
 
@@ -77,6 +78,7 @@ const handleLogin = async () => {
 
         localStorage.setItem('userId', resolvedUserId)
         localStorage.setItem('username', resolvedUsername)
+        localStorage.setItem('email', resolvedEmail)
         if (accessToken) {
           localStorage.setItem('token', accessToken)
         }
@@ -94,6 +96,7 @@ const handleLogin = async () => {
         const userData = {
           userId: resolvedUserId,
           username: resolvedUsername,
+          email: resolvedEmail,
           token: accessToken,
           isLoggedIn: true
         }
