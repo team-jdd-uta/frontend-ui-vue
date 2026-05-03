@@ -221,6 +221,14 @@ const saveBroadcastMetadata = async () => {
 
   try {
     isUpdatingBroadcast.value = true
+    const currentRoom = await fetchRoomDetails(roomId)
+    if (!currentRoom?.roomId) {
+      await getMyStreams()
+      lastBroadcastProvisioning.value = null
+      alert('방송 정보를 다시 불러오지 못했습니다. 방송 목록을 새로고침한 뒤 다시 시도해주세요.')
+      return
+    }
+
     const apiToken = getApiToken()
     const response = await fetch(`${roomServiceBaseUrl}/rooms/${encodeURIComponent(roomId)}`, {
       method: 'PUT',
