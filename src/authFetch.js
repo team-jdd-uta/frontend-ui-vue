@@ -71,7 +71,7 @@ export function installAuthFetch() {
 
     const authorizedInit = withAuthorization(init)
     const response = await nativeFetch(input, authorizedInit)
-    if (response.status !== 401 || !shouldAttemptRefresh(input)) {
+    if (![401, 403].includes(response.status) || !shouldAttemptRefresh(input)) {
       return response
     }
 
