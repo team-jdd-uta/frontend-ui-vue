@@ -27,10 +27,11 @@ const categories = ref(['전체', ...defaultCategories])
 const backendBaseUrl = 'https://backend.team9.cloud.skala-ai.com'
 const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || `${backendBaseUrl}/api/room`).replace(/\/$/, '')
 const authBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || 'https://login.team9.cloud.skala-ai.com').replace(/\/$/, '')
+const demoModeEnabled = String(import.meta.env.VITE_DEMO_MODE || 'false').toLowerCase() === 'true'
 const HOME_PATH = '/'
 const MY_PAGE_PATH = '/mypage'
 
-// 서버 호출 실패 시 fallback 데이터
+// VITE_DEMO_MODE=true일 때만 사용하는 로컬 데모 데이터
 const fallbackStreams = [
   {
     id: 1,
@@ -132,7 +133,7 @@ const fallbackStreams = [
     tags: ['오버워치', '랭크', 'FPS']
   }
 ]
-const liveStreams = ref([...fallbackStreams])
+const liveStreams = ref(demoModeEnabled ? [...fallbackStreams] : [])
 const roomThumbnails = [
   '/images/stream-1.jpg',
   '/images/stream-2.jpg',
@@ -145,13 +146,14 @@ const roomThumbnails = [
   '/images/stream-9.jpg',
   '/images/stream-10.jpg'
 ]
-const recommendedStreamers = ref([
+const fallbackRecommendedStreamers = [
   { name: '정찬혁', avatar: '👨‍💼', viewers: 45600, isLive: true },
   { name: '김현문', avatar: '👩‍🎤', viewers: 32100, isLive: true },
   { name: '김유빈', avatar: '👨‍🎨', viewers: 28900, isLive: true },
   { name: '페이커', avatar: '👩‍💻', viewers: 19800, isLive: false },
   { name: '손흥민', avatar: '👨‍🍳', viewers: 12300, isLive: true }
-])
+]
+const recommendedStreamers = ref(demoModeEnabled ? fallbackRecommendedStreamers : [])
 
 const trendingItems = computed(() => {
   return liveStreams.value.slice(0, 5).map(stream => ({
@@ -398,7 +400,7 @@ const loadStreamsFromChatRooms = async () => {
     liveStreams.value = mapRoomsToStreams(rooms, countMap)
   } catch (error) {
     console.error('Error fetching chat rooms from server:', error)
-    liveStreams.value = [...fallbackStreams]
+    liveStreams.value = demoModeEnabled ? [...fallbackStreams] : []
   }
 }
 
