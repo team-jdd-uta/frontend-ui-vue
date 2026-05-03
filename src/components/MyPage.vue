@@ -1,8 +1,12 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 
 const props = defineProps({
-  userId: String
+  userId: String,
+  categories: {
+    type: Array,
+    default: () => []
+  }
 })
 
 const emit = defineEmits(['close', 'stream-created', 'edit-profile'])
@@ -21,14 +25,58 @@ const followingList = ref([])
 const watchHistory = ref([])
 const chatList = ref([])
 const lastBroadcastProvisioning = ref(null)
+const createBroadcastForm = ref({
+  name: '',
+  category: ''
+})
+const editBroadcastForm = ref({
+  name: '',
+  category: ''
+})
 const activeTab = ref('streams')
 const isCreatingBroadcast = ref(false)
+const isUpdatingBroadcast = ref(false)
+const isBroadcastComposerOpen = ref(false)
 
 const backendBaseUrl = 'https://api.team9.cloud.skala-ai.com'
 const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || `${backendBaseUrl}/api/user`).replace(/\/$/, '')
 const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || `${backendBaseUrl}/api/room`).replace(/\/$/, '')
 const defaultRtmpUrl = 'rtmp://rtmp.team9.cloud.skala-ai.com/live'
 const userId = localStorage.getItem('userId')
+const fallbackCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
+
+const availableCategories = computed(() => {
+  const source = Array.isArray(props.categories) ? props.categories : []
+  const normalized = source
+    .map(category => typeof category === 'string' ? category.trim() : '')
+    .filter(Boolean)
+    .filter(category => category !== '전체')
+
+  const base = normalized.length > 0 ? normalized : fallbackCategories
+  return Array.from(new Set(base))
+})
+
+const ensureCategorySelection = (form) => {
+  const categories = availableCategories.value
+  if (!categories.length) {
+    form.category = ''
+    return
+  }
+  if (!form.category || !categories.includes(form.category)) {
+    form.category = categories[0]
+  }
+}
+
+watch(
+  availableCategories,
+  () => {
+    ensureCategorySelection(createBroadcastForm.value)
+    if (lastBroadcastProvisioning.value) {
+      ensureCategorySelection(editBroadcastForm.value)
+    }
+  },
+  { immediate: true }
+)
 
 const copyText = async (value) => {
   if (!value) {
@@ -98,6 +146,7 @@ const getMyStreams = async () => {
         id: item.roomId,
         roomId: item.roomId,
         title: item.name || item.roomId,
+        category: item.category || '',
         status: item.status || 'UNKNOWN',
         streamKey: item.streamKey || item.roomId,
         viewers: 0,
@@ -109,22 +158,32 @@ const getMyStreams = async () => {
   }
 }
 
-const openBroadcastManagement = (stream) => {
+const openBroadcastManagement = async (stream) => {
   if (!stream?.roomId) {
     return
   }
 
+  const roomDetails = await fetchRoomDetails(stream.roomId)
+  const resolvedRoom = roomDetails || stream
+  const resolvedCategory = resolvedRoom?.category || stream.category || availableCategories.value[0] || ''
+  const resolvedName = resolvedRoom?.name || stream.title || stream.roomId
+
   lastBroadcastProvisioning.value = {
-    roomId: stream.roomId,
-    name: stream.title || stream.roomId,
-    status: stream.status || 'UNKNOWN',
-    streamKey: stream.streamKey || stream.roomId,
-    joinToken: null,
+    roomId: resolvedRoom?.roomId || stream.roomId,
+    name: resolvedName,
+    category: resolvedCategory,
+    status: resolvedRoom?.status || stream.status || 'UNKNOWN',
+    streamKey: resolvedRoom?.streamKey || stream.streamKey || stream.roomId,
+    joinToken: resolvedRoom?.joinToken || null,
     rtmpUrl: defaultRtmpUrl,
-    createdAt: null,
-    updatedAt: null,
-    startedAt: null,
-    endedAt: null
+    createdAt: resolvedRoom?.createdAt || null,
+    updatedAt: resolvedRoom?.updatedAt || null,
+    startedAt: resolvedRoom?.startedAt || null,
+    endedAt: resolvedRoom?.endedAt || null
+  }
+  editBroadcastForm.value = {
+    name: lastBroadcastProvisioning.value.name || '',
+    category: lastBroadcastProvisioning.value.category || availableCategories.value[0] || ''
   }
 }
 
@@ -145,25 +204,29 @@ const fetchRoomDetails = async (roomId) => {
   }
 }
 
-const renameBroadcast = async (stream) => {
-  if (!stream?.roomId) {
+const saveBroadcastMetadata = async () => {
+  if (!lastBroadcastProvisioning.value?.roomId) {
     return
   }
 
-  const nextTitle = window.prompt('새 방송 제목을 입력하세요.', stream.title || '')
-  const trimmedTitle = nextTitle?.trim()
-  if (!trimmedTitle || trimmedTitle === stream.title) {
+  const roomId = lastBroadcastProvisioning.value.roomId
+  const trimmedTitle = editBroadcastForm.value.name?.trim()
+  const trimmedCategory = editBroadcastForm.value.category?.trim()
+
+  if (!trimmedTitle || !trimmedCategory) {
+    alert('방송 제목과 카테고리를 모두 선택해주세요.')
     return
   }
 
   try {
-    const response = await fetch(`${roomServiceBaseUrl}/rooms/${encodeURIComponent(stream.roomId)}`, {
+    isUpdatingBroadcast.value = true
+    const response = await fetch(`${roomServiceBaseUrl}/rooms/${encodeURIComponent(roomId)}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'X-User-Id': String(userId || '').trim()
       },
-      body: JSON.stringify({ name: trimmedTitle })
+      body: JSON.stringify({ name: trimmedTitle, category: trimmedCategory })
     })
 
     if (!response.ok) {
@@ -174,19 +237,27 @@ const renameBroadcast = async (stream) => {
     await getMyStreams()
     emit('stream-created', updatedRoom)
 
-    if (lastBroadcastProvisioning.value?.roomId === stream.roomId) {
+    if (lastBroadcastProvisioning.value?.roomId === roomId) {
       lastBroadcastProvisioning.value = {
         ...lastBroadcastProvisioning.value,
-        roomId: updatedRoom.roomId || stream.roomId,
+        roomId: updatedRoom.roomId || roomId,
         name: updatedRoom.name || trimmedTitle,
-        status: updatedRoom.status || stream.status,
-        streamKey: updatedRoom.streamKey || stream.streamKey || stream.roomId,
+        category: updatedRoom.category || trimmedCategory,
+        status: updatedRoom.status || lastBroadcastProvisioning.value.status,
+        streamKey: updatedRoom.streamKey || lastBroadcastProvisioning.value.streamKey || roomId,
+        joinToken: updatedRoom.joinToken || lastBroadcastProvisioning.value.joinToken,
         rtmpUrl: lastBroadcastProvisioning.value?.rtmpUrl || defaultRtmpUrl
+      }
+      editBroadcastForm.value = {
+        name: lastBroadcastProvisioning.value.name || trimmedTitle,
+        category: lastBroadcastProvisioning.value.category || trimmedCategory
       }
     }
   } catch (error) {
-    console.error('방송 제목 수정 실패:', error)
-    alert('방송 제목 수정에 실패했습니다.')
+    console.error('방송 정보 수정 실패:', error)
+    alert('방송 정보를 수정하는 데 실패했습니다.')
+  } finally {
+    isUpdatingBroadcast.value = false
   }
 }
 
@@ -278,14 +349,15 @@ const unfollowUser = async (user) => {
 }
 
 const createBroadcast = async () => {
-  const roomName = window.prompt('생성할 방송(채팅방) 이름을 입력하세요.')
-  const trimmedName = roomName?.trim()
-
-  if (!trimmedName) {
+  if (isCreatingBroadcast.value) {
     return
   }
 
-  if (isCreatingBroadcast.value) {
+  const trimmedName = createBroadcastForm.value.name?.trim()
+  const trimmedCategory = createBroadcastForm.value.category?.trim()
+
+  if (!trimmedName || !trimmedCategory) {
+    alert('방송 제목과 카테고리를 모두 선택해주세요.')
     return
   }
 
@@ -294,6 +366,7 @@ const createBroadcast = async () => {
   try {
     const payload = {
       name: trimmedName,
+      category: trimmedCategory,
       userId: userId
     }
 
@@ -310,6 +383,11 @@ const createBroadcast = async () => {
 
     const createdRoom = await response.json()
     lastBroadcastProvisioning.value = createdRoom
+    editBroadcastForm.value = {
+      name: createdRoom.name || trimmedName,
+      category: createdRoom.category || trimmedCategory
+    }
+    isBroadcastComposerOpen.value = false
     await getMyStreams()
     userInfo.value.streams = myStreams.value.length
     emit('stream-created', createdRoom)
@@ -324,11 +402,17 @@ const createBroadcast = async () => {
         lastBroadcastProvisioning.value = roomDetails || {
           roomId: existing.roomId,
           name: existing.title,
+          category: existing.category || availableCategories.value[0] || '',
           status: existing.status,
           streamKey: existing.streamKey || existing.roomId,
           joinToken: null,
           rtmpUrl: defaultRtmpUrl
         }
+        editBroadcastForm.value = {
+          name: lastBroadcastProvisioning.value.name || existing.title,
+          category: lastBroadcastProvisioning.value.category || existing.category || availableCategories.value[0] || ''
+        }
+        isBroadcastComposerOpen.value = false
         return
       }
     }
@@ -337,6 +421,17 @@ const createBroadcast = async () => {
   } finally {
     isCreatingBroadcast.value = false
   }
+}
+
+const toggleBroadcastComposer = () => {
+  isBroadcastComposerOpen.value = !isBroadcastComposerOpen.value
+  if (isBroadcastComposerOpen.value) {
+    ensureCategorySelection(createBroadcastForm.value)
+  }
+}
+
+const cancelBroadcastComposer = () => {
+  isBroadcastComposerOpen.value = false
 }
 
 const deleteBroadcast = async (stream) => {
@@ -428,9 +523,55 @@ onMounted(() => {
         <!-- 내 방송 목록 -->
         <div v-if="activeTab === 'streams'" class="streams-list">
           <div class="stream-actions">
-            <button class="broadcast-btn" @click="createBroadcast" :disabled="isCreatingBroadcast">
-              {{ isCreatingBroadcast ? '생성 중...' : '방송하기' }}
+            <button class="broadcast-btn" @click="toggleBroadcastComposer">
+              {{ isBroadcastComposerOpen ? '생성창 닫기' : '방송하기' }}
             </button>
+          </div>
+
+          <div v-if="isBroadcastComposerOpen" class="broadcast-composer">
+            <div class="composer-header">
+              <div>
+                <div class="composer-kicker">새 방송 생성</div>
+                <h3 class="composer-title">방송 제목과 카테고리 선택</h3>
+              </div>
+              <button class="composer-close-btn" @click="cancelBroadcastComposer">닫기</button>
+            </div>
+
+            <div class="composer-grid">
+              <div class="composer-field">
+                <label class="composer-label" for="broadcast-name">방송 제목</label>
+                <input
+                  id="broadcast-name"
+                  v-model="createBroadcastForm.name"
+                  class="composer-input"
+                  type="text"
+                  placeholder="방송 제목을 입력하세요"
+                />
+              </div>
+
+              <div class="composer-field">
+                <label class="composer-label" for="broadcast-category">카테고리</label>
+                <select
+                  id="broadcast-category"
+                  v-model="createBroadcastForm.category"
+                  class="composer-select"
+                >
+                  <option v-for="category in availableCategories" :key="category" :value="category">
+                    {{ category }}
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <div class="composer-actions">
+              <button
+                class="composer-submit-btn"
+                @click="createBroadcast"
+                :disabled="isCreatingBroadcast"
+              >
+                {{ isCreatingBroadcast ? '생성 중...' : '방송 생성' }}
+              </button>
+            </div>
           </div>
 
           <div v-if="lastBroadcastProvisioning" class="obs-panel">
@@ -470,11 +611,62 @@ onMounted(() => {
                   <button class="obs-copy-btn" @click="copyText(lastBroadcastProvisioning.roomId)">복사</button>
                 </div>
               </div>
+              <div class="obs-field">
+                <span class="obs-label">카테고리</span>
+                <div class="obs-value-row">
+                  <code class="obs-value">{{ lastBroadcastProvisioning.category || '미분류' }}</code>
+                </div>
+              </div>
             </div>
             <p class="obs-help">
               OBS에서 RTMP URL과 Stream Key를 넣고 송출을 시작하면, RTMP 콜백이 방 상태를 LIVE로 바꿉니다.
               현재 stream key는 room id와 동일하게 발급됩니다.
             </p>
+
+            <div class="management-editor">
+              <div class="management-header">
+                <div>
+                  <div class="management-kicker">방송 관리</div>
+                  <h3 class="management-title">제목과 카테고리를 수정합니다</h3>
+                </div>
+              </div>
+
+              <div class="composer-grid">
+                <div class="composer-field">
+                  <label class="composer-label" for="manage-title">방송 제목</label>
+                  <input
+                    id="manage-title"
+                    v-model="editBroadcastForm.name"
+                    class="composer-input"
+                    type="text"
+                    placeholder="방송 제목을 입력하세요"
+                  />
+                </div>
+
+                <div class="composer-field">
+                  <label class="composer-label" for="manage-category">카테고리</label>
+                  <select
+                    id="manage-category"
+                    v-model="editBroadcastForm.category"
+                    class="composer-select"
+                  >
+                    <option v-for="category in availableCategories" :key="category" :value="category">
+                      {{ category }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="composer-actions">
+                <button
+                  class="composer-submit-btn"
+                  @click="saveBroadcastMetadata"
+                  :disabled="isUpdatingBroadcast"
+                >
+                  {{ isUpdatingBroadcast ? '저장 중...' : '방송 정보 저장' }}
+                </button>
+              </div>
+            </div>
           </div>
 
           <div v-if="myStreams.length === 0" class="empty-state">
@@ -490,10 +682,10 @@ onMounted(() => {
                 <span class="meta-item">👁 {{ stream.viewers }}명 시청</span>
                 <span class="meta-item">📅 {{ stream.date }}</span>
                 <span class="meta-item">🔑 {{ stream.streamKey || stream.roomId }}</span>
+                <span class="meta-item">🏷 {{ stream.category || '미분류' }}</span>
               </div>
             </div>
             <button class="action-btn" @click="openBroadcastManagement(stream)">관리</button>
-            <button class="action-btn" @click="renameBroadcast(stream)">제목 수정</button>
             <button class="delete-btn" @click="deleteBroadcast(stream)">삭제</button>
           </div>
         </div>
@@ -843,6 +1035,113 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
+.broadcast-composer,
+.management-editor {
+  background-color: #18181b;
+  border: 1px solid #2a2a2e;
+  border-radius: 14px;
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.composer-header,
+.management-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.composer-kicker,
+.management-kicker {
+  font-size: 12px;
+  color: #00ffa3;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.composer-title,
+.management-title {
+  margin: 0;
+  font-size: 18px;
+  color: #efeff1;
+}
+
+.composer-close-btn {
+  border: 1px solid #53535f;
+  background: transparent;
+  color: #efeff1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.composer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.composer-field {
+  display: grid;
+  gap: 8px;
+}
+
+.composer-label {
+  font-size: 13px;
+  color: #b8b8bf;
+  font-weight: 600;
+}
+
+.composer-input,
+.composer-select {
+  width: 100%;
+  background-color: #0e0e10;
+  border: 1px solid #2a2a2e;
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: #efeff1;
+  font-size: 14px;
+}
+
+.composer-select:focus,
+.composer-input:focus {
+  outline: none;
+  border-color: #00ffa3;
+  box-shadow: 0 0 0 1px rgba(0, 255, 163, 0.18);
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.composer-submit-btn {
+  background: linear-gradient(135deg, #00ffa3 0%, #00d9ff 100%);
+  color: #0e0e10;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.composer-submit-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.composer-submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .empty-state {
   text-align: center;
   padding: 60px 20px;
@@ -887,6 +1186,7 @@ onMounted(() => {
 .stream-meta {
   display: flex;
   gap: 15px;
+  flex-wrap: wrap;
   font-size: 13px;
   color: #b8b8bf;
 }

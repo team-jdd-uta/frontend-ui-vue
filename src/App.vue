@@ -376,12 +376,12 @@ const mapRoomsToStreams = (rooms, countMap = {}) => {
         : `${room.name} 준비중`,
       streamer: room.broadcasterId || room.name || `Room ${index + 1}`,
       streamer_id: room.broadcasterId || room.roomId,
-      category: '토크',
+      category: room.category || '토크',
       viewers: countMap[room.roomId] ?? 0,
       thumbnail: roomThumbnails[index % roomThumbnails.length],
       isLive: room.status === 'LIVE',
       status: room.status,
-      tags: [room.status === 'LIVE' ? 'LIVE' : '준비중', '채팅', room.status]
+      tags: [room.status === 'LIVE' ? 'LIVE' : '준비중', '채팅', room.category || room.status]
     }))
 }
 
@@ -487,6 +487,7 @@ onUnmounted(() => {
         <template v-if="showMyPage">
           <MyPage
             :userId="currentUser?.userId"
+            :categories="categories"
             @close="closeMyPage"
             @stream-created="handleStreamCreated"
             @edit-profile="openProfileEditPage"
