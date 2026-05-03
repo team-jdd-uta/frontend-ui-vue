@@ -30,7 +30,7 @@ watch(
   (value) => {
     form.userId = value?.userId || localStorage.getItem('userId') || ''
     form.username = value?.username || localStorage.getItem('username') || form.userId
-    form.email = value?.email || ''
+    form.email = value?.email || localStorage.getItem('email') || ''
   },
   { immediate: true, deep: true }
 )
@@ -111,7 +111,7 @@ const handleSave = async () => {
 
     <div class="profile-edit-content">
       <div class="edit-card">
-        <div class="edit-avatar">{{ (form.username || form.userId || 'U').charAt(0).toUpperCase() }}</div>
+        <div class="edit-avatar">{{ (form.username || form.email || 'U').charAt(0).toUpperCase() }}</div>
 
         <div class="edit-form">
           <div v-if="state.errorMessage" class="error-message">
@@ -119,18 +119,13 @@ const handleSave = async () => {
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="edit-userId">아이디</label>
-            <input id="edit-userId" v-model="form.userId" type="text" class="form-input" disabled />
+            <label class="form-label" for="edit-email">이메일</label>
+            <input id="edit-email" v-model="form.email" type="email" class="form-input" placeholder="이메일을 입력하세요" />
           </div>
 
           <div class="form-group">
             <label class="form-label" for="edit-username">닉네임</label>
             <input id="edit-username" v-model="form.username" type="text" class="form-input" placeholder="닉네임을 입력하세요" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="edit-email">이메일</label>
-            <input id="edit-email" v-model="form.email" type="email" class="form-input" placeholder="이메일을 입력하세요" />
           </div>
 
           <div class="button-row">
