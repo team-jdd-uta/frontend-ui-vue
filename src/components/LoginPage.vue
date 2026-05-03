@@ -11,7 +11,7 @@ const userId = ref('')
 const password = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
-const apiBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || 'https://login.team9.cloud.skala-ai.com').replace(/\/$/, '')
+const apiBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || 'https://api.team9.cloud.skala-ai.com/auth').replace(/\/$/, '')
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const handleClose = () => {
