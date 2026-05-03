@@ -562,7 +562,6 @@ const buildRoomServiceHeaders = () => {
   const token = String(localStorage.getItem('token') || '').trim()
   if (token) {
     headers.Authorization = `Bearer ${token}`
-    headers['X-Auth-Gateway'] = 'frontend-ui-vue'
   }
 
   return headers
