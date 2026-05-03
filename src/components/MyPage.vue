@@ -27,6 +27,7 @@ const isCreatingBroadcast = ref(false)
 const backendBaseUrl = 'https://api.team9.cloud.skala-ai.com'
 const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || `${backendBaseUrl}/api/user`).replace(/\/$/, '')
 const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || `${backendBaseUrl}/api/room`).replace(/\/$/, '')
+const defaultRtmpUrl = 'rtmp://rtmp.team9.cloud.skala-ai.com/live'
 const userId = localStorage.getItem('userId')
 
 const copyText = async (value) => {
@@ -98,12 +99,32 @@ const getMyStreams = async () => {
         roomId: item.roomId,
         title: item.name || item.roomId,
         status: item.status || 'UNKNOWN',
+        streamKey: item.streamKey || item.roomId,
         viewers: 0,
         date: item.createdAt ? new Date(item.createdAt).toISOString().slice(0, 10) : ''
       }))
   } catch (error) {
     console.error('내 방송 목록 조회 오류:', error)
     myStreams.value = []
+  }
+}
+
+const openBroadcastManagement = (stream) => {
+  if (!stream?.roomId) {
+    return
+  }
+
+  lastBroadcastProvisioning.value = {
+    roomId: stream.roomId,
+    name: stream.title || stream.roomId,
+    status: stream.status || 'UNKNOWN',
+    streamKey: stream.streamKey || stream.roomId,
+    joinToken: null,
+    rtmpUrl: defaultRtmpUrl,
+    createdAt: null,
+    updatedAt: null,
+    startedAt: null,
+    endedAt: null
   }
 }
 
@@ -121,6 +142,51 @@ const fetchRoomDetails = async (roomId) => {
   } catch (error) {
     console.error('방 상세 조회 실패:', error)
     return null
+  }
+}
+
+const renameBroadcast = async (stream) => {
+  if (!stream?.roomId) {
+    return
+  }
+
+  const nextTitle = window.prompt('새 방송 제목을 입력하세요.', stream.title || '')
+  const trimmedTitle = nextTitle?.trim()
+  if (!trimmedTitle || trimmedTitle === stream.title) {
+    return
+  }
+
+  try {
+    const response = await fetch(`${roomServiceBaseUrl}/rooms/${encodeURIComponent(stream.roomId)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-User-Id': String(userId || '').trim()
+      },
+      body: JSON.stringify({ name: trimmedTitle })
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const updatedRoom = await response.json()
+    await getMyStreams()
+    emit('stream-created', updatedRoom)
+
+    if (lastBroadcastProvisioning.value?.roomId === stream.roomId) {
+      lastBroadcastProvisioning.value = {
+        ...lastBroadcastProvisioning.value,
+        roomId: updatedRoom.roomId || stream.roomId,
+        name: updatedRoom.name || trimmedTitle,
+        status: updatedRoom.status || stream.status,
+        streamKey: updatedRoom.streamKey || stream.streamKey || stream.roomId,
+        rtmpUrl: lastBroadcastProvisioning.value?.rtmpUrl || defaultRtmpUrl
+      }
+    }
+  } catch (error) {
+    console.error('방송 제목 수정 실패:', error)
+    alert('방송 제목 수정에 실패했습니다.')
   }
 }
 
@@ -258,9 +324,9 @@ const createBroadcast = async () => {
           roomId: existing.roomId,
           name: existing.title,
           status: existing.status,
-          streamKey: null,
+          streamKey: existing.streamKey || existing.roomId,
           joinToken: null,
-          rtmpUrl: null
+          rtmpUrl: defaultRtmpUrl
         }
         return
       }
@@ -406,6 +472,7 @@ onMounted(() => {
             </div>
             <p class="obs-help">
               OBS에서 RTMP URL과 Stream Key를 넣고 송출을 시작하면, RTMP 콜백이 방 상태를 LIVE로 바꿉니다.
+              현재 stream key는 room id와 동일하게 발급됩니다.
             </p>
           </div>
 
@@ -421,9 +488,11 @@ onMounted(() => {
               <div class="stream-meta">
                 <span class="meta-item">👁 {{ stream.viewers }}명 시청</span>
                 <span class="meta-item">📅 {{ stream.date }}</span>
+                <span class="meta-item">🔑 {{ stream.streamKey || stream.roomId }}</span>
               </div>
             </div>
-            <button class="action-btn" disabled title="방송 이력 기능 준비 중">방송 이력</button>
+            <button class="action-btn" @click="openBroadcastManagement(stream)">관리</button>
+            <button class="action-btn" @click="renameBroadcast(stream)">제목 수정</button>
             <button class="delete-btn" @click="deleteBroadcast(stream)">삭제</button>
           </div>
         </div>
