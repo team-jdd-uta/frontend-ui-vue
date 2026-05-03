@@ -47,8 +47,9 @@ Kubernetes 채팅 MSA와 연동하는 Vue 3 프론트엔드입니다. 채팅방 
 | `VITE_SOCKET_BASE_URL` | `window.location.origin` | Socket.IO base URL |
 | `VITE_SOCKET_PATH` | `/api/socket` | Socket.IO path |
 | `VITE_PROXY_TARGET` | 없음 | `npm run dev`에서 사용할 backend/ingress target |
+| `VITE_DEMO_MODE` | `false` | `true`일 때만 fallback 방송/추천 스트리머 데모 데이터를 표시 |
 
-개발 서버 실행 시 `VITE_PROXY_TARGET`이 필요합니다.
+개발 서버 실행 시 `VITE_PROXY_TARGET`이 필요합니다. 로컬 환경은 `.env.example`을 복사해 `.env`로 만들고, 실제 `.env`는 커밋하지 않습니다.
 
 예:
 
@@ -57,6 +58,7 @@ VITE_ROOM_SERVICE_URL=/api/room
 VITE_USER_INFO_SERVER_URL=/api/user
 VITE_SOCKET_PATH=/api/socket
 VITE_PROXY_TARGET=http://localhost:8088
+VITE_DEMO_MODE=false
 ```
 
 ## 로컬 실행
@@ -114,6 +116,7 @@ io(socketBaseUrl, {
 ## Kubernetes 기준
 
 - Service port는 `80`입니다.
+- 배포 source of truth는 `gitops/apps/frontend/dev` Helm chart입니다. 이 저장소의 과거 `manifest/` Kubernetes YAML은 제거했습니다.
 - Ingress host 예: `skala3-cloud1-team9.cloud.skala-ai.com`
 - `/api/socket`는 WebSocket upgrade가 가능해야 합니다.
 - `/api/user/comments`는 user-service의 `/comments`로 전달되어야 합니다.
@@ -121,5 +124,6 @@ io(socketBaseUrl, {
 ## 주의점
 
 - 로그인/회원가입은 Cognito 연동 후 확정되는 흐름입니다. 현재 모달은 서버 URL이 없으면 안내 메시지만 보여줍니다.
-- 방 조회 실패가 있어도 채팅 화면에서는 Socket.IO 연결을 계속 시도합니다.
+- 운영 기본값에서는 방 조회 실패 시 가짜 라이브 목록을 보여주지 않습니다. 데모가 필요하면 `VITE_DEMO_MODE=true`를 명시합니다.
+- 방 조회 실패가 있어도 이미 선택된 채팅 화면에서는 Socket.IO 연결을 계속 시도할 수 있습니다.
 - `watch_history` 생성 API는 현재 분리된 user-service에 맞춰 비활성화되어 있습니다.
