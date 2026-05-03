@@ -43,6 +43,7 @@ const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || `${back
 const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || `${backendBaseUrl}/api/room`).replace(/\/$/, '')
 const defaultRtmpUrl = 'rtmp://rtmp.team9.cloud.skala-ai.com/live'
 const userId = localStorage.getItem('userId')
+const getApiToken = () => localStorage.getItem('token') || localStorage.getItem('idToken') || ''
 const fallbackCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
 
 const availableCategories = computed(() => {
@@ -220,11 +221,13 @@ const saveBroadcastMetadata = async () => {
 
   try {
     isUpdatingBroadcast.value = true
+    const apiToken = getApiToken()
     const response = await fetch(`${roomServiceBaseUrl}/rooms/${encodeURIComponent(roomId)}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'X-User-Id': String(userId || '').trim()
+        'X-User-Id': String(userId || '').trim(),
+        ...(apiToken ? { Authorization: `Bearer ${apiToken}` } : {})
       },
       body: JSON.stringify({ name: trimmedTitle, category: trimmedCategory })
     })
@@ -369,11 +372,13 @@ const createBroadcast = async () => {
       category: trimmedCategory,
       userId: userId
     }
+    const apiToken = getApiToken()
 
     const response = await fetch(`${roomServiceBaseUrl}/rooms`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...(apiToken ? { Authorization: `Bearer ${apiToken}` } : {})
       },
       body: JSON.stringify(payload)
     })
