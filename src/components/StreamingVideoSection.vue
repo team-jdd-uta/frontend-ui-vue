@@ -465,10 +465,27 @@ const getViewerUserId = () => {
   return String(localStorage.getItem('userId') || chatUsername.value || '').trim()
 }
 
+const buildRoomServiceHeaders = () => {
+  const headers = {
+    'X-User-Id': getViewerUserId(),
+  }
+
+  const token = String(localStorage.getItem('token') || '').trim()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+    headers['X-Auth-Gateway'] = 'frontend-ui-vue'
+  }
+
+  return headers
+}
+
 const fetchJoinToken = async (roomId, userId) => {
   const response = await fetch(
     `${roomServiceBaseUrl}/rooms/${encodeURIComponent(roomId)}/join-token?userId=${encodeURIComponent(userId)}`,
-    { method: 'POST' }
+    {
+      method: 'POST',
+      headers: buildRoomServiceHeaders(),
+    }
   )
 
   if (!response.ok) {
