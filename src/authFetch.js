@@ -14,7 +14,7 @@ function shouldAttemptRefresh(url) {
 }
 
 function withAuthorization(init = {}) {
-  const token = localStorage.getItem('token')
+  const token = localStorage.getItem('idToken') || localStorage.getItem('token')
   if (!token) return init
 
   const headers = new Headers(init.headers || {})
