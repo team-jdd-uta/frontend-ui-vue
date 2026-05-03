@@ -43,7 +43,7 @@ const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || `${back
 const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || `${backendBaseUrl}/api/room`).replace(/\/$/, '')
 const defaultRtmpUrl = 'rtmp://rtmp.team9.cloud.skala-ai.com/live'
 const userId = localStorage.getItem('userId')
-const getApiToken = () => localStorage.getItem('token') || localStorage.getItem('idToken') || ''
+const getApiToken = () => localStorage.getItem('idToken') || localStorage.getItem('token') || ''
 const fallbackCategories = ['게임', '토크', '음악', '스포츠', '요리', '예술', '크리에이티브', '학습']
 
 const availableCategories = computed(() => {
