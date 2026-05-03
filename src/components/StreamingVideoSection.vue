@@ -21,7 +21,7 @@ const chatInput = ref('')
 const chatMessagesContainer = ref(null)
 const chatHistoryContainer = ref(null)
 const isFollowing = ref(false)
-const defaultPinnedChatMessage = 'AI 반응 분석 대기 중입니다. 채팅 10개가 쌓이면 최신 분석이 표시됩니다.'
+const defaultPinnedChatMessage = '방송자 전용 AI 채팅 동향 요약을 실행하면 최근 5분 채팅 흐름이 표시됩니다.'
 const pinnedChatMessage = ref(defaultPinnedChatMessage)
 const chatHistoryVisible = ref(false)
 const chatHistoryLoading = ref(false)
@@ -32,6 +32,9 @@ const chatHistoryCursor = ref(null)
 const chatHistoryError = ref('')
 const selectedChatTarget = ref(null)
 const chatHistoryRequestSeq = ref(0)
+const summaryLoading = ref(false)
+const summaryError = ref('')
+const summaryMeta = ref(null)
 
 const isChatConnected = ref(false)
 const chatUsername = ref(localStorage.getItem('username') || localStorage.getItem('userId') || 'guest')
@@ -211,6 +214,13 @@ watch(() => props.roomId, () => {
   closeChatHistoryPanel()
   loadStream()
   pinnedChatMessage.value = defaultPinnedChatMessage
+  startSummaryPolling()
+})
+
+watch(isBroadcaster, () => {
+  pinnedChatMessage.value = defaultPinnedChatMessage
+  summaryError.value = ''
+  summaryMeta.value = null
   startSummaryPolling()
 })
 
@@ -492,12 +502,12 @@ const fetchJoinToken = async (roomId, userId) => {
 
 const fetchLatestSummary = async () => {
   const roomId = activeRoomId()
-  if (!roomId) {
+  if (!roomId || !isBroadcaster.value) {
     return
   }
 
   try {
-    const response = await fetch(`${apiBaseUrl}/summaries/${encodeURIComponent(roomId)}`)
+    const response = await fetch(`${chatHistoryBaseUrl}/summaries/${encodeURIComponent(roomId)}`)
     if (response.status === 404) {
       return
     }
@@ -515,6 +525,63 @@ const fetchLatestSummary = async () => {
   }
 }
 
+const requestManualSummary = async () => {
+  if (!isBroadcaster.value || summaryLoading.value) {
+    return
+  }
+
+  const roomId = activeRoomId()
+  const requesterUserId = currentUserId.value
+  if (!roomId || !requesterUserId) {
+    summaryError.value = '방송자 정보를 확인할 수 없습니다.'
+    return
+  }
+
+  summaryLoading.value = true
+  summaryError.value = ''
+  try {
+    const response = await fetch(`${chatHistoryBaseUrl}/rooms/${encodeURIComponent(roomId)}/summary`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-User-Id': requesterUserId
+      },
+      body: JSON.stringify({ requesterUserId })
+    })
+
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      if (data?.error === 'INSUFFICIENT_CHAT_MESSAGES') {
+        summaryError.value = data.message || '최근 5분 내 요약할 채팅이 부족합니다.'
+        summaryMeta.value = {
+          messageCount: data.messageCount ?? 0,
+          minMessages: data.minMessages ?? 10,
+          windowMinutes: data.windowMinutes ?? 5
+        }
+        return
+      }
+      throw new Error(data?.message || `HTTP ${response.status}`)
+    }
+
+    const summary = String(data.summary || '').trim()
+    if (!summary) {
+      throw new Error('요약 결과가 비어 있습니다.')
+    }
+
+    pinnedChatMessage.value = summary
+    summaryMeta.value = {
+      messageCount: data.sourceMessageCount ?? data.messageCount ?? 0,
+      minMessages: data.minMessages ?? 10,
+      windowMinutes: data.windowMinutes ?? 5
+    }
+  } catch (error) {
+    console.error('AI 채팅 동향 요약 요청 실패:', error)
+    summaryError.value = 'AI 채팅 동향 요약을 생성하지 못했습니다.'
+  } finally {
+    summaryLoading.value = false
+  }
+}
+
 const stopSummaryPolling = () => {
   if (summaryPollTimer) {
     window.clearInterval(summaryPollTimer)
@@ -524,6 +591,10 @@ const stopSummaryPolling = () => {
 
 const startSummaryPolling = () => {
   stopSummaryPolling()
+  if (!isBroadcaster.value) {
+    pinnedChatMessage.value = defaultPinnedChatMessage
+    return
+  }
   fetchLatestSummary()
   summaryPollTimer = window.setInterval(fetchLatestSummary, summaryPollIntervalMs)
 }
@@ -893,8 +964,21 @@ onUnmounted(() => {
             <span class="chat-count">{{ messages.length }}개의 메시지</span>
           </div>
 
-          <div class="chat-pinned-message">
+          <div v-if="isBroadcaster" class="chat-pinned-message">
             {{ pinnedChatMessage }}
+          </div>
+          <div v-if="isBroadcaster" class="chat-summary-controls">
+            <button
+              class="chat-summary-btn"
+              @click="requestManualSummary"
+              :disabled="summaryLoading"
+            >
+              {{ summaryLoading ? '요약 생성 중...' : '최근 5분 채팅 동향 요약' }}
+            </button>
+            <p v-if="summaryMeta" class="chat-summary-meta">
+              최근 {{ summaryMeta.windowMinutes }}분 / {{ summaryMeta.messageCount }}개 메시지 기준
+            </p>
+            <p v-if="summaryError" class="chat-summary-error">{{ summaryError }}</p>
           </div>
           <div v-if="selectedChatTarget" class="chat-history-panel">
             <div class="chat-history-panel-header">
@@ -1248,6 +1332,49 @@ onUnmounted(() => {
   font-weight: 600;
   line-height: 1.5;
   word-break: keep-all;
+  white-space: pre-line;
+}
+
+.chat-summary-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.chat-summary-btn {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #00ffa3;
+  color: #08110d;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.chat-summary-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: #46ffc0;
+}
+
+.chat-summary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.chat-summary-meta {
+  margin: 0;
+  color: #adadb8;
+  font-size: 12px;
+}
+
+.chat-summary-error {
+  margin: 0;
+  color: #ff8a8a;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .chat-history-panel {
