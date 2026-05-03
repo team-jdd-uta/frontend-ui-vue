@@ -55,7 +55,7 @@ let reconnectStartedAtMs = null
 let userInitiatedDisconnect = false
 let summaryPollTimer = null
 
-const backendBaseUrl = 'https://backend.team9.cloud.skala-ai.com'
+const backendBaseUrl = 'https://api.team9.cloud.skala-ai.com'
 const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || `${backendBaseUrl}/api/user`).replace(/\/$/, '')
 const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || `${backendBaseUrl}/api/room`).replace(/\/$/, '')
 const chatHistoryBaseUrl = (import.meta.env.VITE_CHAT_HISTORY_SERVER_URL || `${backendBaseUrl}/api/chat-history`).replace(/\/$/, '')
@@ -753,7 +753,13 @@ const connectChat = async (isReconnect = false) => {
     path: socketPath,
     autoConnect: false,
     reconnection: false,
-    transports: ['websocket', 'polling']
+    transports: ['websocket', 'polling'],
+    auth: localStorage.getItem('token')
+      ? { token: localStorage.getItem('token') }
+      : {},
+    extraHeaders: localStorage.getItem('token')
+      ? { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      : {}
   })
 
   client.on('connect', () => {

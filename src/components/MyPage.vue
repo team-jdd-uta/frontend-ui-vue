@@ -24,7 +24,7 @@ const lastBroadcastProvisioning = ref(null)
 const activeTab = ref('streams')
 const isCreatingBroadcast = ref(false)
 
-const backendBaseUrl = 'https://backend.team9.cloud.skala-ai.com'
+const backendBaseUrl = 'https://api.team9.cloud.skala-ai.com'
 const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || `${backendBaseUrl}/api/user`).replace(/\/$/, '')
 const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || `${backendBaseUrl}/api/room`).replace(/\/$/, '')
 const userId = localStorage.getItem('userId')
