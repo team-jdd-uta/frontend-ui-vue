@@ -567,6 +567,10 @@ const buildRoomServiceHeaders = () => {
   return headers
 }
 
+const getSocketAuthToken = () => {
+  return String(localStorage.getItem('idToken') || localStorage.getItem('token') || '').trim()
+}
+
 const fetchJoinToken = async (roomId, userId) => {
   const response = await fetch(
     `${roomServiceBaseUrl}/rooms/${encodeURIComponent(roomId)}/join-token?userId=${encodeURIComponent(userId)}`,
@@ -864,11 +868,8 @@ const connectChat = async (isReconnect = false) => {
     autoConnect: false,
     reconnection: false,
     transports: ['websocket', 'polling'],
-    auth: localStorage.getItem('token')
-      ? { token: localStorage.getItem('token') }
-      : {},
-    extraHeaders: localStorage.getItem('token')
-      ? { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    auth: getSocketAuthToken()
+      ? { token: getSocketAuthToken() }
       : {}
   })
 
