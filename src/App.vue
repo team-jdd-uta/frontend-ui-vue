@@ -165,7 +165,8 @@ const isDefaultStorageThumbnail = (value) => {
     'thumbnail-default',
     'default-thumbnail',
     'basic-thumbnail',
-    'no-image'
+    'no-image',
+    'stream thumbnail'
   ].some((token) => thumbnail.includes(token))
 }
 

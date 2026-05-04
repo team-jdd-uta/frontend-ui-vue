@@ -1,11 +1,34 @@
 <script setup>
-import { onMounted } from 'vue'
+import { computed } from 'vue'
 
 const props = defineProps({
   stream: Object
 })
 
 const emit = defineEmits(['stream-click'])
+
+const fallbackThumbnail = '/images/stream-1.jpg'
+
+const isUsableThumbnail = (value) => {
+  const thumbnail = String(value || '').trim()
+  const lowered = thumbnail.toLowerCase()
+
+  if (!thumbnail) {
+    return false
+  }
+
+  if (['default', 'placeholder', 'stream thumbnail', 'no-image'].some((token) => lowered.includes(token))) {
+    return false
+  }
+
+  return thumbnail.startsWith('/') || /^https?:\/\//i.test(thumbnail)
+}
+
+const displayThumbnail = computed(() => {
+  return isUsableThumbnail(props.stream?.thumbnail)
+    ? props.stream.thumbnail
+    : fallbackThumbnail
+})
 
 const formatViewers = (count) => {
   if (count >= 1000) {
@@ -27,7 +50,7 @@ const handleThumbnailError = (event) => {
     return
   }
   image.dataset.fallbackApplied = 'true'
-  image.src = '/images/stream-1.jpg'
+  image.src = fallbackThumbnail
 }
 
 </script>
@@ -35,7 +58,7 @@ const handleThumbnailError = (event) => {
 <template>
   <div class="stream-card" @click="handleCardClick">
     <div class="thumbnail-wrapper">
-      <img :src="stream.thumbnail" :alt="stream.title" class="thumbnail" @error="handleThumbnailError" />
+      <img :src="displayThumbnail" alt="" class="thumbnail" @error="handleThumbnailError" />
       <div class="thumbnail-overlay">
         <span class="live-badge">LIVE</span>
         <span class="viewers-badge">
