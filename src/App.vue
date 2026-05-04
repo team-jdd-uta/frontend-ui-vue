@@ -26,6 +26,7 @@ const defaultCategories = ['게임', '토크', '음악', '스포츠', '요리', 
 const categories = ref(['전체', ...defaultCategories])
 const backendBaseUrl = 'https://api.team9.cloud.skala-ai.com'
 const roomServiceBaseUrl = (import.meta.env.VITE_ROOM_SERVICE_URL || `${backendBaseUrl}/api/room`).replace(/\/$/, '')
+const userServiceBaseUrl = (import.meta.env.VITE_USER_INFO_SERVER_URL || `${backendBaseUrl}/api/user`).replace(/\/$/, '')
 const authBaseUrl = (import.meta.env.VITE_LOGIN_SERVER_URL || `${backendBaseUrl}/auth`).replace(/\/$/, '')
 const demoModeEnabled = String(import.meta.env.VITE_DEMO_MODE || 'false').toLowerCase() === 'true'
 const HOME_PATH = '/'
@@ -146,6 +147,7 @@ const roomThumbnails = [
   '/images/stream-9.jpg',
   '/images/stream-10.jpg'
 ]
+const broadcasterDisplayNameCache = new Map()
 
 const hashString = (value) => {
   return String(value || '')
@@ -186,6 +188,66 @@ const resolveRoomThumbnail = (room, index) => {
   return isDefaultStorageThumbnail(candidate)
     ? roomFallbackThumbnail(room, index)
     : candidate
+}
+
+const resolveBroadcasterDisplayName = (room, index, broadcasterNames = {}) => {
+  const broadcasterId = String(room?.broadcasterId || '').trim()
+  const cachedName = broadcasterId ? broadcasterNames[broadcasterId] : ''
+  const directName = String(
+    room?.broadcasterName ||
+    room?.broadcasterUsername ||
+    room?.broadcasterNickname ||
+    room?.broadcasterDisplayName ||
+    ''
+  ).trim()
+
+  return cachedName ||
+    directName ||
+    String(room?.name || '').trim() ||
+    (broadcasterId || `Room ${index + 1}`)
+}
+
+const fetchBroadcasterDisplayName = async (broadcasterId) => {
+  const normalizedId = String(broadcasterId || '').trim()
+  if (!normalizedId) {
+    return ''
+  }
+
+  if (broadcasterDisplayNameCache.has(normalizedId)) {
+    return broadcasterDisplayNameCache.get(normalizedId)
+  }
+
+  try {
+    const response = await fetch(`${userServiceBaseUrl}/users/info/${encodeURIComponent(normalizedId)}`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const data = await response.json()
+    const displayName = String(data?.userName || data?.username || data?.name || normalizedId).trim() || normalizedId
+    broadcasterDisplayNameCache.set(normalizedId, displayName)
+    return displayName
+  } catch (error) {
+    console.warn(`스트리머 이름 조회 실패 (${normalizedId}):`, error)
+    broadcasterDisplayNameCache.set(normalizedId, normalizedId)
+    return normalizedId
+  }
+}
+
+const hydrateBroadcasterNames = async (rooms, countMap) => {
+  const broadcasterIds = Array.from(new Set(
+    (Array.isArray(rooms) ? rooms : [])
+      .map((room) => String(room?.broadcasterId || '').trim())
+      .filter(Boolean)
+  ))
+
+  await Promise.all(broadcasterIds.map((id) => fetchBroadcasterDisplayName(id)))
+
+  const broadcasterNames = Object.fromEntries(
+    broadcasterIds.map((id) => [id, broadcasterDisplayNameCache.get(id) || id])
+  )
+
+  liveStreams.value = mapRoomsToStreams(rooms, countMap, broadcasterNames)
 }
 const fallbackRecommendedStreamers = [
   { name: '정찬혁', avatar: '👨‍💼', viewers: 45600, isLive: true },
@@ -324,7 +386,10 @@ const handleSignupSuccess = () => {
 const handleLoginSuccess = (userData) => {
   console.log('로그인 성공:', userData)
   isLoggedIn.value = true
-  currentUser.value = userData
+  currentUser.value = {
+    ...userData,
+    userName: userData?.userName || userData?.username || ''
+  }
   // TODO: 추가 사용자 상태 업데이트
 }
 
@@ -339,6 +404,7 @@ const clearAuthState = () => {
   localStorage.removeItem('refreshToken')
   localStorage.removeItem('tokenExpiresIn')
   localStorage.removeItem('username')
+  localStorage.removeItem('userName')
   localStorage.removeItem('email')
 }
 
@@ -406,7 +472,7 @@ const handleStreamCreated = async () => {
   await loadStreamsFromChatRooms()
 }
 
-const mapRoomsToStreams = (rooms, countMap = {}) => {
+const mapRoomsToStreams = (rooms, countMap = {}, broadcasterNames = {}) => {
   return rooms
     .filter((room) => !room?.status || ['READY', 'LIVE', 'STOPPED'].includes(room.status))
     .map((room, index) => ({
@@ -415,7 +481,7 @@ const mapRoomsToStreams = (rooms, countMap = {}) => {
       title: room.status === 'LIVE'
         ? `${room.name} 라이브`
         : `${room.name} 준비중`,
-      streamer: room.broadcasterId || room.name || `Room ${index + 1}`,
+      streamer: resolveBroadcasterDisplayName(room, index, broadcasterNames),
       streamer_id: room.broadcasterId || room.roomId,
       category: room.category || '토크',
       viewers: countMap[room.roomId] ?? 0,
@@ -441,7 +507,7 @@ const loadStreamsFromChatRooms = async () => {
       const counts = await countsRes.json()
       countMap = Object.fromEntries(counts.map(c => [c.roomId, c.participants]))
     }
-    liveStreams.value = mapRoomsToStreams(rooms, countMap)
+    await hydrateBroadcasterNames(rooms, countMap)
   } catch (error) {
     console.error('Error fetching chat rooms from server:', error)
     liveStreams.value = demoModeEnabled ? [...fallbackStreams] : []
@@ -487,6 +553,7 @@ onMounted(async () => {
     currentUser.value = {
       userId,
       username,
+      userName: username,
       token,
       idToken,
       refreshToken

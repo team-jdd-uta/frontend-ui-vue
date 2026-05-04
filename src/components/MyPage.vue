@@ -313,9 +313,10 @@ const loadUserData = async () => {
     const response = await fetch(`${userServiceBaseUrl}/users/info/${userId}`)
     if (response.ok) {
       const data = await response.json()
+      const resolvedUsername = data.userName || data.username || localStorage.getItem('username') || userId
       userInfo.value = {
         userId: userId,
-        username: data.username || userId,
+        username: resolvedUsername,
         email: data.email || localStorage.getItem('email') || '',
         followers: data.followers || 0,
         following: data.following || 0,
@@ -326,7 +327,7 @@ const loadUserData = async () => {
     console.error('사용자 정보 로드 오류:', error)
     // 기본값 설정
     userInfo.value.userId = userId
-    userInfo.value.username = userId
+    userInfo.value.username = localStorage.getItem('username') || localStorage.getItem('userName') || userId
     userInfo.value.email = localStorage.getItem('email') || ''
   }
 
