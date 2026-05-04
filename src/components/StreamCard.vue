@@ -18,12 +18,24 @@ const handleCardClick = () => {
   emit('stream-click', props.stream)
 }
 
+const handleThumbnailError = (event) => {
+  const image = event?.target
+  if (!image) {
+    return
+  }
+  if (image?.dataset?.fallbackApplied === 'true') {
+    return
+  }
+  image.dataset.fallbackApplied = 'true'
+  image.src = '/images/stream-1.jpg'
+}
+
 </script>
 
 <template>
   <div class="stream-card" @click="handleCardClick">
     <div class="thumbnail-wrapper">
-      <img :src="stream.thumbnail" :alt="stream.title" class="thumbnail" />
+      <img :src="stream.thumbnail" :alt="stream.title" class="thumbnail" @error="handleThumbnailError" />
       <div class="thumbnail-overlay">
         <span class="live-badge">LIVE</span>
         <span class="viewers-badge">

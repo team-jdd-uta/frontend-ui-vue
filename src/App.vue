@@ -146,6 +146,46 @@ const roomThumbnails = [
   '/images/stream-9.jpg',
   '/images/stream-10.jpg'
 ]
+
+const hashString = (value) => {
+  return String(value || '')
+    .split('')
+    .reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 0)
+}
+
+const isDefaultStorageThumbnail = (value) => {
+  const thumbnail = String(value || '').trim().toLowerCase()
+  if (!thumbnail) {
+    return true
+  }
+
+  return [
+    'default',
+    'placeholder',
+    'thumbnail-default',
+    'default-thumbnail',
+    'basic-thumbnail',
+    'no-image'
+  ].some((token) => thumbnail.includes(token))
+}
+
+const roomFallbackThumbnail = (room, index) => {
+  const seed = room?.roomId || room?.streamKey || room?.name || index
+  return roomThumbnails[hashString(seed) % roomThumbnails.length]
+}
+
+const resolveRoomThumbnail = (room, index) => {
+  const candidate = room?.thumbnailUrl ||
+    room?.thumbnail ||
+    room?.imageUrl ||
+    room?.coverImageUrl ||
+    room?.posterUrl ||
+    ''
+
+  return isDefaultStorageThumbnail(candidate)
+    ? roomFallbackThumbnail(room, index)
+    : candidate
+}
 const fallbackRecommendedStreamers = [
   { name: '정찬혁', avatar: '👨‍💼', viewers: 45600, isLive: true },
   { name: '김현문', avatar: '👩‍🎤', viewers: 32100, isLive: true },
@@ -378,7 +418,7 @@ const mapRoomsToStreams = (rooms, countMap = {}) => {
       streamer_id: room.broadcasterId || room.roomId,
       category: room.category || '토크',
       viewers: countMap[room.roomId] ?? 0,
-      thumbnail: roomThumbnails[index % roomThumbnails.length],
+      thumbnail: resolveRoomThumbnail(room, index),
       isLive: room.status === 'LIVE',
       status: room.status,
       tags: [room.status === 'LIVE' ? 'LIVE' : '준비중', '채팅', room.category || room.status]
