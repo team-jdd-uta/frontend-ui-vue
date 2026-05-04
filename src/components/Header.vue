@@ -23,6 +23,9 @@ const displayName = computed(() => {
   if (props.currentUser?.username) {
     return props.currentUser.username
   }
+  if (props.currentUser?.userName) {
+    return props.currentUser.userName
+  }
   if (props.currentUser?.email) {
     return props.currentUser.email
   }
@@ -30,6 +33,10 @@ const displayName = computed(() => {
   if (username) {
     console.log('로컬 스토리지 username:', username)
     return username
+  }
+  const userName = localStorage.getItem('userName')
+  if (userName) {
+    return userName
   }
   const userId = localStorage.getItem('userId')
   console.log('로컬 스토리지 userId:', userId)

@@ -68,7 +68,7 @@ const handleLogin = async () => {
       if (data === true || data.success === true) {
         const serverUser = data?.user || {}
         const resolvedUserId = serverUser.id || serverUser.userId || username
-        const resolvedUsername = serverUser.username || username
+        const resolvedUsername = serverUser.username || serverUser.userName || username
         const resolvedEmail = serverUser.email || username
 
         console.log('저장할 userId:', resolvedUserId)
@@ -78,6 +78,7 @@ const handleLogin = async () => {
 
         localStorage.setItem('userId', resolvedUserId)
         localStorage.setItem('username', resolvedUsername)
+        localStorage.setItem('userName', resolvedUsername)
         localStorage.setItem('email', resolvedEmail)
         if (accessToken) {
           localStorage.setItem('token', accessToken)

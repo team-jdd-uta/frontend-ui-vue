@@ -29,7 +29,7 @@ watch(
   () => props.currentUser,
   (value) => {
     form.userId = value?.userId || localStorage.getItem('userId') || ''
-    form.username = value?.username || localStorage.getItem('username') || form.userId
+    form.username = value?.username || value?.userName || localStorage.getItem('username') || localStorage.getItem('userName') || form.userId
     form.email = value?.email || localStorage.getItem('email') || ''
   },
   { immediate: true, deep: true }
@@ -80,11 +80,12 @@ const handleSave = async () => {
 
     const savedUser = {
       userId: payload.userId,
-      username: data?.username || payload.username,
+      username: data?.username || data?.userName || payload.username,
       email: data?.email || payload.email
     }
 
     localStorage.setItem('username', savedUser.username)
+    localStorage.setItem('userName', savedUser.username)
     if (savedUser.email) {
       localStorage.setItem('email', savedUser.email)
     }
