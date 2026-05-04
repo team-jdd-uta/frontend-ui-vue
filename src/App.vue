@@ -299,6 +299,22 @@ const findStreamByRoomId = (roomId) => {
   return liveStreams.value.find((stream) => getRoomIdFromStream(stream) === String(roomId))
 }
 
+const syncSelectedStream = () => {
+  if (!selectedStream.value) {
+    return
+  }
+
+  const roomId = getRoomIdFromStream(selectedStream.value)
+  if (!roomId) {
+    return
+  }
+
+  const latestStream = findStreamByRoomId(roomId)
+  if (latestStream) {
+    selectedStream.value = latestStream
+  }
+}
+
 const setViewState = ({ stream = null, isMyPage = false, isProfileEditPage = false }) => {
   showMyPage.value = isMyPage
   showProfileEditPage.value = isProfileEditPage
@@ -349,8 +365,9 @@ const handlePopState = () => {
 }
 
 const openVideoModal = (stream) => {
-  setViewState({ stream })
   const roomId = getRoomIdFromStream(stream)
+  const latestStream = roomId ? findStreamByRoomId(roomId) : null
+  setViewState({ stream: latestStream || stream })
   if (roomId) {
     pushRoute(`/room/${encodeURIComponent(roomId)}`)
   }
@@ -470,6 +487,7 @@ const handleProfileSaved = (updatedUser) => {
 
 const handleStreamCreated = async () => {
   await loadStreamsFromChatRooms()
+  syncSelectedStream()
 }
 
 const mapRoomsToStreams = (rooms, countMap = {}, broadcasterNames = {}) => {
@@ -508,6 +526,7 @@ const loadStreamsFromChatRooms = async () => {
       countMap = Object.fromEntries(counts.map(c => [c.roomId, c.participants]))
     }
     await hydrateBroadcasterNames(rooms, countMap)
+    syncSelectedStream()
   } catch (error) {
     console.error('Error fetching chat rooms from server:', error)
     liveStreams.value = demoModeEnabled ? [...fallbackStreams] : []
