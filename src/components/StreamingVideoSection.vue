@@ -718,6 +718,13 @@ const appendSingleChatMessage = (payload) => {
   const sender = rawSender || 'SYSTEM'
   const rawText = typeof payload.message === 'string' ? payload.message.trim() : ''
   let text = rawText
+  const isSuperChat = payload.isSuperChat === true ||
+    payload.isSuperChat === 'true' ||
+    payload.superChat === true ||
+    payload.superChat === 'true'
+  if (isSuperChat) {
+    console.log('슈퍼챗 수신:', payload)
+  }
 
   if (isSystem && !text) {
     if (payload.type === 'ENTER') {
@@ -741,7 +748,7 @@ const appendSingleChatMessage = (payload) => {
     text,
     isMine: !isSystem && String(payload.senderUserId || payload.userId || '') === getViewerUserId(),
     isSystem,
-    isSuperChat: payload.isSuperChat === true
+    isSuperChat
   })
 }
 
@@ -954,6 +961,7 @@ const disconnectChat = () => {
 
 const sendMessage = (isSuperChat = false) => {
   const messageContent = chatInput.value.trim()
+  const superChat = isSuperChat === true
 
   if (!messageContent) {
     return
@@ -969,8 +977,9 @@ const sendMessage = (isSuperChat = false) => {
     sender: chatUsername.value,
     userId: getViewerUserId(),
     message: messageContent,
-    isSuperChat
+    isSuperChat: superChat
   })
+  console.log('채팅 전송:', { roomId: activeRoomId(), isSuperChat: superChat })
 
   chatInput.value = ''
 }
@@ -1215,7 +1224,7 @@ onUnmounted(() => {
             </button>
             <button
               class="send-btn"
-              @click="sendMessage"
+              @click="sendMessage()"
               :disabled="!isChatConnected || !chatInput.trim()"
             >
               전송
